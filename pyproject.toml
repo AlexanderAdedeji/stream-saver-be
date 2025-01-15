@@ -12,6 +12,10 @@ uvicorn = "^0.34.0"
 pydantic-settings = "^2.7.1"
 sqlalchemy = "^2.0.37"
 loguru = "^0.7.3"
+tenacity = "^9.0.0"
+psycopg2-binary = "^2.9.10"
+psycopg2 = "^2.9.10"
+motor = "^3.6.1"
 
 
 [tool.poetry.group.dev.dependencies]

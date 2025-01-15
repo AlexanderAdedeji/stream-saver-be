@@ -15,3 +15,5 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
         logger.debug("Database session closed.")
+
+

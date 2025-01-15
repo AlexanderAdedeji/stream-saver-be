@@ -1,5 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient
-from app.core.settings.configurations import settings
+from src.core.settings.configurations.config import settings
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 from pymongo.errors import PyMongoError
@@ -40,4 +40,7 @@ db_client = client[MONGO_DB_NAME]
 
 # Collections Access
 template_collection = db_client["templates"]
+
+
+
 

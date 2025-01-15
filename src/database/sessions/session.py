@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from tenacity import retry, stop_after_attempt, wait_exponential
 import logging
-from src.core.settings.config import settings
+from src.core.settings.configurations.config import settings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
