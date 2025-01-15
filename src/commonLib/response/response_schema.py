@@ -1,16 +1,15 @@
-from typing import Type, TypeVar, Generic, Optional, Dict, Any
-from pydantic.generics import GenericModel
-
+from typing import Generic, Optional, Dict, Any, TypeVar
+from pydantic import BaseModel, ConfigDict
+from typing_extensions import TypeVarTuple
 
 T = TypeVar("T")
 
-
-class GenericResponse(GenericModel, Generic[T]):
+class GenericResponse(BaseModel, Generic[T]):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     message: str
     status_code: int
-    data: Optional[T]
+    data: Optional[T] = None
     metadata: Optional[Dict[str, Any]] = None
-
 
 def create_response(
     message: str = "",
