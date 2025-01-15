@@ -4,11 +4,11 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 import logging
-from app.core.config import settings
-from app.api.routes import global_router
-from app.database.base import Base
-from app.database.session import engine
-from app.database.mongo_client import client
+from src.core.settings.config import settings
+from src.api.routes.routes import router as global_router
+from src.database.base import Base
+from src.database.sessions.session import engine
+from src.database.sessions.mongo_client import client
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)

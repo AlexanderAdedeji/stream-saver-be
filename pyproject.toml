@@ -9,6 +9,9 @@ readme = "README.md"
 python = "^3.12"
 fastapi = "^0.115.6"
 uvicorn = "^0.34.0"
+pydantic-settings = "^2.7.1"
+sqlalchemy = "^2.0.37"
+loguru = "^0.7.3"
 
 
 [tool.poetry.group.dev.dependencies]
