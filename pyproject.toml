@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "new folder"
+name = "src"
 version = "0.1.0"
 description = ""
 authors = ["AlexAdedeji <alexadedeji15@gmail.com>"]
