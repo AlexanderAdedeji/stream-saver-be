@@ -82,6 +82,8 @@ def register_event_handlers(app: FastAPI):
 
 app = create_application()
 
+
+
 @app.get("/", include_in_schema=False)
 async def root():
     """Redirect to API documentation."""

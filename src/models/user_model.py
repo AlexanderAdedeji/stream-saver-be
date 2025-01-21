@@ -3,11 +3,12 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 from loguru import logger
 from sqlalchemy import Integer, Column, Boolean, String, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Session
 from commonLib.models.base_class import Base
-from app.schemas.jwt_schema import JWTEMAIL, JWTUser
-from app.core.settings.configurations import settings
-from app.core.settings.security import security
+from src.core.settings import security
+from src.schemas.jwt_schema import JWTEMAIL, JWTUser
+from src.core.settings.configurations.config import settings
+
 
 
 JWT_EXPIRE_MINUTES = settings.JWT_EXPIRE_MINUTES
@@ -25,33 +26,10 @@ class User(Base):
     email = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=False)
     hashed_password = Column(String, nullable=False)
+
     # user_type_id = Column(String, ForeignKey("user_types.id"))
     # user_type = relationship("UserType", back_populates="users")
     # This will link to the `user_id` in CommissionerProfile
-    commissioner_profile = relationship(
-        "CommissionerProfile",
-        foreign_keys="[CommissionerProfile.commissioner_id]",
-        back_populates="user",
-        uselist=False,
-    )
-
-    # Add more relationships as
-    head_of_unit = relationship(
-        "HeadOfUnit",
-        foreign_keys="HeadOfUnit.head_of_unit_id",
-        back_populates="user",
-        uselist=False,
-    )
-    invited_by = relationship(
-        "UserInvite", foreign_keys="[UserInvite.invited_by_id]", back_populates="user"
-    )
-    category_created_by = relationship(
-        "AffidavitCategory",
-        foreign_keys="AffidavitCategory.created_by_id",
-        back_populates="user",
-    )
-
-    # payments = relationship("Payments",back_populates="user")
     @property
     # def is_superuser(self):
     #     return self.user_type.name == SUPERUSER_USER_TYPE
@@ -115,4 +93,7 @@ class User(Base):
 
         return reset_token
 
-
+    def __init__(self, first_name: str, last_name: str, email: str):
+            self.first_name = first_name
+            self.last_name = last_name
+            self.email = email
