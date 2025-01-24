@@ -1,57 +1,116 @@
-from fastapi import APIRouter, HTTPException, Query
-from src.schemas.stream_saver_schema import VideoMetadata
+from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi.responses import RedirectResponse
+from loguru import logger
 import yt_dlp
+import instaloader
+from datetime import datetime
+from typing import List, Optional
+from pydantic import HttpUrl
+from src.schemas.stream_saver_schema import InstagramPostResponse, VideoMetadata
 
-import os
-
+# Initialize FastAPI app and router
+app = FastAPI()
 router = APIRouter()
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
-
-app = FastAPI()
+# Helper Functions
 
 
+def get_owner_details(post: instaloader.Post) -> dict:
+    """Extract owner details from the post's node."""
+    try:
+        owner_data = post._node['owner']
+        return {
+            "id": owner_data.get("id"),
+            "username": owner_data.get("username"),
+            "full_name": owner_data.get("full_name"),
+            "profile_pic_url": owner_data.get("profile_pic_url"),
+            "is_verified": owner_data.get("is_verified", False),
+        }
+    except KeyError as e:
+        logger.error(f"Owner details not found: {e}")
+        return {
+            "id": None,
+            "username": None,
+            "full_name": None,
+            "profile_pic_url": None,
+            "is_verified": False,
+        }
+
+
+def extract_shortcode(url: str) -> str:
+    """Extract shortcode from Instagram URL"""
+    url = url.strip("/")
+    for pattern in ["/reel/", "/p/", "/tv/"]:
+        if pattern in url:
+            return url.split(pattern)[-1].split("/")[0]
+    return url.split("/")[-1]
+
+def get_instagram_post(url: str) -> Optional[instaloader.Post]:
+    """Fetch Instagram post using instaloader"""
+    try:
+        L = instaloader.Instaloader()
+        shortcode = extract_shortcode(url)
+        return instaloader.Post.from_shortcode(L.context, shortcode)
+    except Exception as e:
+        logger.error(f"Error fetching Instagram post: {e}")
+        return None
+
+def classify_post(post: instaloader.Post) -> str:
+    """Determine post type"""
+    if post.typename == "GraphReel":
+        return "reel"
+    if post.mediacount > 1:
+        return "carousel"
+    return "video" if post.is_video else "image"
 
 
 
-def get_video_info(url):
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-    }
+
+def process_media(post: instaloader.Post) -> List[dict]:
+    """Process media for all post types"""
+    if post._node.get('edge_sidecar_to_children'):  # Carousel posts
+        return [
+            {
+                "index": idx,
+                "url": node.get('video_url') if node.get('is_video') else node['display_url'],
+                "type": "video" if node.get('is_video') else "image",
+                "duration": node.get('video_duration'),
+                "width": node.get('dimensions', {}).get('width'),
+                "height": node.get('dimensions', {}).get('height'),
+            }
+            for idx, node in enumerate(post._node['edge_sidecar_to_children']['edges'])
+        ]
+    else:  # Single image or video post
+        return [
+            {
+                "index": 0,
+                "url": post._node.get('video_url') if post._node.get('is_video') else post._node['display_url'],
+                "type": "video" if post._node.get('is_video') else "image",
+                "duration": post._node.get('video_duration'),
+                "width": post._node.get('dimensions', {}).get('width'),
+                "height": post._node.get('dimensions', {}).get('height'),
+            }
+        ]
+
+
+
+def get_music_info(post: instaloader.Post) -> Optional[str]:
+    """Extract music information for Reels"""
+    try:
+        if post.typename == "GraphReel" and post.music:
+            return f"{post.music.title} - {post.music.artist}"
+    except AttributeError:
+        pass
+    return None
+
+def get_video_info(url: str):
+    """Fetch YouTube video information using yt_dlp"""
+    ydl_opts = {"quiet": True, "no_warnings": True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        return _clean_info(info)  # Clean the raw data
+        return ydl.extract_info(url, download=False)
 
-def _clean_info(raw_info):
-    # Clean thumbnails
-    cleaned_thumbnails = []
-    for thumb in raw_info.get("thumbnails", []):
-        cleaned_thumbnails.append({
-            "url": thumb.get("url"),
-            "width": thumb.get("width"),
-            "height": thumb.get("height"),
-            "id": thumb.get("id"),
-        })
-
-    # Clean formats (filter out invalid entries)
-    cleaned_formats = []
-    for fmt in raw_info.get("formats", []):
-        if not fmt.get("url"):  # Skip formats without a URL
-            continue
-        cleaned_formats.append({
-            "format_id": fmt.get("format_id"),
-            "url": fmt.get("url"),
-            "ext": fmt.get("ext"),
-            "resolution": fmt.get("resolution"),
-            "filesize": fmt.get("filesize"),
-            "fps": fmt.get("fps"),
-            "width": fmt.get("width"),
-            "height": fmt.get("height"),
-        })
-
-    # Construct metadata
+def clean_video_info(raw_info):
+    """Clean and structure YouTube video information"""
     return {
         "id": raw_info.get("id"),
         "title": raw_info.get("title"),
@@ -61,46 +120,110 @@ def _clean_info(raw_info):
         "view_count": raw_info.get("view_count"),
         "like_count": raw_info.get("like_count"),
         "thumbnail": raw_info.get("thumbnail"),
-        "thumbnails": cleaned_thumbnails,
-        "formats": cleaned_formats,
+        "thumbnails": raw_info.get("thumbnails", []),
+        "formats": [
+            {
+                "format_id": fmt.get("format_id"),
+                "url": fmt.get("url"),
+                "ext": fmt.get("ext"),
+                "resolution": fmt.get("resolution"),
+                "filesize": fmt.get("filesize"),
+                "fps": fmt.get("fps"),
+                "width": fmt.get("width"),
+                "height": fmt.get("height"),
+            }
+            for fmt in raw_info.get("formats", [])
+            if fmt.get("url")
+        ],
     }
 
-@router.get("/youtube/video/metadata")
-async def get_metadata(url: str):
-    try:
-        info = get_video_info(url)
-        if not info:
-            raise HTTPException(status_code=404, detail="Video not found")
+# Routes
 
-        # Extract relevant metadata
-        metadata = {
-            "id": info.get("id"),
-            "title": info.get("title"),
-            "description": info.get("description"),
-            "upload_date": info.get("upload_date"),
-            "duration": info.get("duration"),
-            "view_count": info.get("view_count"),
-            "like_count": info.get("like_count"),
-            "thumbnail": info.get("thumbnail"),
-            "thumbnails": info.get("thumbnails", []),
-            "formats": info.get("formats", []),
+
+
+
+@router.get("/instagram/metadata", response_model=InstagramPostResponse)
+async def instagram_metadata(url: str):
+    """Fetch Instagram post metadata"""
+    try:
+        if "instagram.com" not in url:
+            raise HTTPException(status_code=400, detail="Invalid Instagram URL")
+
+        # Fetch post data
+        post = get_instagram_post(url)
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found or private")
+
+        # Extract owner details
+        owner_details = get_owner_details(post)
+
+        # Prepare response data
+        response_data = {
+            "id": post._node['id'],
+            "shortcode": post._node['shortcode'],
+            "type": classify_post(post),
+            "caption": post._node.get('edge_media_to_caption', {}).get('edges', [{}])[0].get('node', {}).get('text'),
+            "timestamp": datetime.fromtimestamp(post._node['taken_at_timestamp']),
+            "like_count": post._node.get('edge_media_preview_like', {}).get('count'),
+            "view_count": post._node.get('video_view_count') if post._node.get('is_video') else None,
+            "media": process_media(post),
+            "owner_username": owner_details["username"],
+            "owner_profile_pic": owner_details["profile_pic_url"],
+            "music": get_music_info(post),
+            "is_sponsored": post._node.get('is_ad', False),
         }
 
-    
-        return VideoMetadata(**metadata)
-    
+        return InstagramPostResponse(**response_data)
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching Instagram metadata: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process Instagram post")
 
-@router.post("/yotube_download")
-async def download_youtube_video(url: str = Query(..., description="URL of the YouTube video")):
+
+
+
+@router.get("/instagram/download")
+async def download_instagram_media(url: str, media_index: int = 0):
+    """Redirect to downloadable Instagram media URL"""
     try:
-        # Create a YouTube object
-        ydl_opts = {}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return info
-            # ydl.download([url])
+        post = get_instagram_post(url)
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
 
+        media = process_media(post)
+        if media_index >= len(media):
+            raise HTTPException(status_code=400, detail="Invalid media index")
+
+        return RedirectResponse(media[media_index]["url"])
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
+        logger.error(f"Error processing Instagram download: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process download")
+
+@router.get("/youtube/video/metadata", response_model=VideoMetadata)
+async def youtube_metadata(url: str):
+    """Fetch YouTube video metadata"""
+    try:
+        raw_info = get_video_info(url)
+        if not raw_info:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        cleaned_info = clean_video_info(raw_info)
+        return VideoMetadata(**cleaned_info)
+    except Exception as e:
+        logger.error(f"Error fetching YouTube metadata: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process YouTube video")
+
+@router.post("/youtube/download")
+async def download_youtube_video(url: str = Query(..., description="URL of the YouTube video")):
+    """Download YouTube video"""
+    try:
+        with yt_dlp.YoutubeDL({}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return {"download_url": info["url"]}
+    except Exception as e:
+        logger.error(f"Error downloading YouTube video: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process video download")
+
+# Include router in the app
+app.include_router(router)
