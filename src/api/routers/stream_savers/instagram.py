@@ -1,5 +1,7 @@
+import json
 from fastapi import FastAPI, APIRouter, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
+import requests
 from loguru import logger
 import yt_dlp
 import instaloader
@@ -18,7 +20,7 @@ router = APIRouter()
 def get_owner_details(post: instaloader.Post) -> dict:
     """Extract owner details from the post's node."""
     try:
-        owner_data = post._node['owner']
+        owner_data = post._node["owner"]
         return {
             "id": owner_data.get("id"),
             "username": owner_data.get("username"),
@@ -45,6 +47,7 @@ def extract_shortcode(url: str) -> str:
             return url.split(pattern)[-1].split("/")[0]
     return url.split("/")[-1]
 
+
 def get_instagram_post(url: str) -> Optional[instaloader.Post]:
     """Fetch Instagram post using instaloader"""
     try:
@@ -55,6 +58,7 @@ def get_instagram_post(url: str) -> Optional[instaloader.Post]:
         logger.error(f"Error fetching Instagram post: {e}")
         return None
 
+
 def classify_post(post: instaloader.Post) -> str:
     """Determine post type"""
     if post.typename == "GraphReel":
@@ -64,34 +68,44 @@ def classify_post(post: instaloader.Post) -> str:
     return "video" if post.is_video else "image"
 
 
-
-
 def process_media(post: instaloader.Post) -> List[dict]:
     """Process media for all post types"""
-    if post._node.get('edge_sidecar_to_children'):  # Carousel posts
-        return [
-            {
-                "index": idx,
-                "url": node.get('video_url') if node.get('is_video') else node['display_url'],
-                "type": "video" if node.get('is_video') else "image",
-                "duration": node.get('video_duration'),
-                "width": node.get('dimensions', {}).get('width'),
-                "height": node.get('dimensions', {}).get('height'),
-            }
-            for idx, node in enumerate(post._node['edge_sidecar_to_children']['edges'])
-        ]
+    if post._node.get("edge_sidecar_to_children"):  # Carousel posts
+
+        media = []
+        for child in post._node.get("edge_sidecar_to_children").get("edges"):
+            media_type = "video"  if child.get("node").get("is_video") else "image"
+            index= child.get("node").get("id")
+            media_url = child.get("node").get("video_url") if child.get("node").get("is_video") else child.get("node").get("display_resources")[-1].get("src")
+    
+
+            media.append({"url": media_url, "index": index, "type":media_type})
+        return media
+
+        return post._node["edge_sidecar_to_children"]["edges"]
     else:  # Single image or video post
+        media = [{"index": 1, 
+         
+         "url":  post._node.get("video_url")
+                    if post._node.get("is_video")
+                    else post._node.get("display_url")
+         
+                }]
+        return media
+        return post._node
         return [
             {
                 "index": 0,
-                "url": post._node.get('video_url') if post._node.get('is_video') else post._node['display_url'],
-                "type": "video" if post._node.get('is_video') else "image",
-                "duration": post._node.get('video_duration'),
-                "width": post._node.get('dimensions', {}).get('width'),
-                "height": post._node.get('dimensions', {}).get('height'),
+                "url": (
+                    post._node.get("video_url")
+                    if post._node.get("is_video")
+                    else post._post._node.get("display_url")
+                ),
+                "type": post._node.get("type"),
+                "width": post._node.get("dimensions", {}).get("width"),
+                "height": post._node.get("dimensions", {}).get("height"),
             }
         ]
-
 
 
 def get_music_info(post: instaloader.Post) -> Optional[str]:
@@ -104,10 +118,7 @@ def get_music_info(post: instaloader.Post) -> Optional[str]:
     return None
 
 
-
-
-
-@router.get("/instagram/metadata", response_model=InstagramPostResponse)
+@router.get("/metadata")
 async def instagram_metadata(url: str):
     """Fetch Instagram post metadata"""
     try:
@@ -116,6 +127,7 @@ async def instagram_metadata(url: str):
 
         # Fetch post data
         post = get_instagram_post(url)
+
         if not post:
             raise HTTPException(status_code=404, detail="Post not found or private")
 
@@ -124,21 +136,30 @@ async def instagram_metadata(url: str):
 
         # Prepare response data
         response_data = {
-            "id": post._node['id'],
-            "shortcode": post._node['shortcode'],
+            "id": post._node["id"],
+            "shortcode": post._node["shortcode"],
             "type": classify_post(post),
-            "caption": post._node.get('edge_media_to_caption', {}).get('edges', [{}])[0].get('node', {}).get('text'),
-            "timestamp": datetime.fromtimestamp(post._node['taken_at_timestamp']),
-            "like_count": post._node.get('edge_media_preview_like', {}).get('count'),
-            "view_count": post._node.get('video_view_count') if post._node.get('is_video') else None,
+            "caption": post._node.get("edge_media_to_caption", {})
+            .get("edges", [{}])[0]
+            .get("node", {})
+            .get("text"),
+            "timestamp": datetime.fromtimestamp(post._node["taken_at_timestamp"]),
+            "like_count": post._node.get("edge_media_preview_like", {}).get("count"),
+            "view_count": (
+                post._node.get("video_view_count")
+                if post._node.get("is_video")
+                else None
+            ),
             "media": process_media(post),
-            "owner_username": owner_details["username"],
-            "owner_profile_pic": owner_details["profile_pic_url"],
+            "username": owner_details["username"],
+            "user_avatar": owner_details["profile_pic_url"],
             "music": get_music_info(post),
-            "is_sponsored": post._node.get('is_ad', False),
+            "is_sponsored": post._node.get("is_ad", False),
         }
 
-        return InstagramPostResponse(**response_data)
+        return response_data
+
+        # return InstagramPostResponse(**response_data)
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -146,11 +167,12 @@ async def instagram_metadata(url: str):
         raise HTTPException(status_code=500, detail="Failed to process Instagram post")
 
 
-
-
-@router.get("/instagram/download")
-async def download_instagram_media(url: str, media_index: int = 0):
-    """Redirect to downloadable Instagram media URL"""
+@router.get("/download")
+async def download_instagram_media(
+    url: str = Query(..., description="Instagram post URL"),
+    media_index: int = Query(0, description="Index of media in carousel"),
+):
+    """Download Instagram media"""
     try:
         post = get_instagram_post(url)
         if not post:
@@ -160,9 +182,18 @@ async def download_instagram_media(url: str, media_index: int = 0):
         if media_index >= len(media):
             raise HTTPException(status_code=400, detail="Invalid media index")
 
-        return RedirectResponse(media[media_index]["url"])
+        media_url = media[media_index]["url"]
+
+        # Stream the actual media content
+        response = requests.get(media_url, stream=True)
+        return StreamingResponse(
+            response.iter_content(chunk_size=1024 * 1024),
+            media_type=response.headers["Content-Type"],
+            headers={
+                "Content-Disposition": f'attachment; filename="instagram_media_{media_index}.{media[media_index]["type"]}"'
+            },
+        )
+
     except Exception as e:
         logger.error(f"Error processing Instagram download: {e}")
         raise HTTPException(status_code=500, detail="Failed to process download")
-
-

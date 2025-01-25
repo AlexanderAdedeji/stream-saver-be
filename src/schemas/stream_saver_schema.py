@@ -140,3 +140,9 @@ class InstagramPostResponse(BaseModel):
     owner_profile_pic: Optional[HttpUrl] = None
     music: Optional[str] = None  # For Reels
     is_sponsored: bool = False
+
+
+
+class YoutubeDownloadForm(BaseModel):
+    url: str
+    quality: str  # "1080p", "720p", "480p", "
