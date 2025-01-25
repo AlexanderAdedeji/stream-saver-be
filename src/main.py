@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 
+
+
 # Initialize database schema
 Base.metadata.create_all(bind=engine)
 
@@ -25,7 +27,7 @@ def create_application() -> FastAPI:
     # CORS configuration
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_ORIGINS.split(","),
+        allow_origins=["*","https://www.youtube.com/watch?v=8cRvjCK9634"],
         allow_credentials=True,
         allow_methods=settings.ALLOWED_METHODS.split(","),
         allow_headers=["*"],

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from src.api.routers import authentication_routes, download_routes, user_routes
-from src.api.routers.stream_savers import stream_savers
+from src.api.routers import authentication_routes, youtube_routes, user_routes
+from src.api.routers.stream_savers import instagram
 
 
 router = APIRouter()
@@ -13,17 +13,17 @@ router.include_router(
 )
 
 router.include_router(
-    download_routes.router,
-    tags=["Download"],
-    prefix="/download",
+    youtube_routes.router,
+    tags=["youtube"],
+    prefix="/youtube",
     responses={404: {"description": "Not found"}}
 )
 
 
 router.include_router(
-    stream_savers.router,
-    tags=["Stream Savers"],
-    prefix="/stream-savers",
+    instagram.router,
+    tags=["Instagram"],
+    prefix="/instagram",
     responses={404: {"description": "Not found"}}
 )
 router.include_router(

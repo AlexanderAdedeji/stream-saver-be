@@ -3,6 +3,8 @@ from pydantic import Field
 import os
 
 
+
+
 class CustomSettings(BaseSettings):
     # General Settings
     ALLOWED_HOSTS: str = Field(..., description="Comma-separated list of allowed hosts")
@@ -18,7 +20,7 @@ class CustomSettings(BaseSettings):
     RESET_TOKEN_EXPIRE_MINUTES: int = Field(
         60, description="Reset token expiration time in minutes"
     )
-    PROJECT_NAME: str = Field("E-Affidavit Server", description="Project name")
+    PROJECT_NAME: str = Field(..., description="Project name")
     API_URL_PREFIX: str = Field(..., description="API URL prefix")
     VERSION: str = Field("0.1.0", description="API version")
     DEBUG: bool = Field(False, description="Debug mode")
