@@ -1,0 +1,319 @@
+```json
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "StreamSaver API",
+    "version": "0.1.0",
+    "description": "API for saving streams from various platforms."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000/api/v1",
+      "description": "Development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "Authentication endpoints"
+    },
+    {
+      "name": "Users",
+      "description": "User management endpoints"
+    },
+    {
+      "name": "youtube",
+      "description": "YouTube video processing endpoints"
+    },
+    {
+      "name": "Instagram",
+      "description": "Instagram post processing endpoints"
+    }
+  ],
+  "paths": {
+    "/auth/login": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Login endpoint",
+        "responses": {
+          "200": {
+            "description": "Successful login",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Hello World"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get all users",
+        "responses": {
+          "200": {
+            "description": "Successful retrieval of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Hello World"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/youtube/video/metadata": {
+      "get": {
+        "tags": ["youtube"],
+        "summary": "Fetch YouTube video metadata",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "description": "URL of the YouTube video",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful metadata retrieval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoMetadata"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Video not found"
+          },
+          "500": {
+            "description": "Failed to process YouTube video"
+          }
+        }
+      }
+    },
+    "/youtube/download": {
+      "post": {
+        "tags": ["youtube"],
+        "summary": "Download YouTube video",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "description": "URL of the YouTube video",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful download initiation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "download_url": {
+                      "type": "string",
+                      "format": "url"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to process video download"
+          }
+        }
+      }
+    },
+    "/instagram/metadata": {
+      "get": {
+        "tags": ["Instagram"],
+        "summary": "Fetch Instagram post metadata",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "description": "URL of the Instagram post",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "url"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful metadata retrieval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstagramPostResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Instagram URL"
+          },
+          "404": {
+            "description": "Post not found or private"
+          },
+          "500": {
+            "description": "Failed to process Instagram post"
+          }
+        }
+      }
+    },
+    "/instagram/download": {
+      "get": {
+        "tags": ["Instagram"],
+        "summary": "Redirect to downloadable Instagram media URL",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "description": "URL of the Instagram post",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "url"
+            }
+          },
+          {
+            "name": "media_index",
+            "in": "query",
+            "description": "Index of the media to download (for carousel posts)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "307": {
+            "description": "Redirect to media URL"
+          },
+          "404": {
+            "description": "Post not found"
+          },
+          "400": {
+            "description": "Invalid media index"
+          },
+          "500": {
+            "description": "Failed to process download"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "VideoMetadata": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "thumbnail": { "type": "string", "format": "url" },
+          "duration": { "type": "integer" },
+          "upload_date": { "type": "string" },
+          "video_qualities": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "thumbnail",
+          "duration",
+          "upload_date",
+          "video_qualities"
+        ]
+      },
+      "InstagramPostResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "shortcode": { "type": "string" },
+          "type": { "type": "string" },
+          "caption": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "like_count": { "type": "integer" },
+          "view_count": { "type": "integer" },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstagramMediaItem"
+            }
+          },
+          "owner_username": { "type": "string" },
+          "owner_profile_pic": { "type": "string", "format": "url" },
+          "music": { "type": "string" },
+          "is_sponsored": { "type": "boolean" }
+        },
+        "required": [
+          "id",
+          "shortcode",
+          "type",
+          "timestamp",
+          "media",
+          "owner_username"
+        ]
+      },
+      "InstagramMediaItem": {
+        "type": "object",
+        "properties": {
+          "index": { "type": "integer" },
+          "url": { "type": "string", "format": "url" },
+          "type": { "type": "string" },
+          "duration": { "type": "number", "format": "float" },
+          "width": { "type": "integer" },
+          "height": { "type": "integer" }
+        },
+        "required": [
+          "index",
+          "url",
+          "type"
+        ]
+      }
+    }
+  }
+}
+```

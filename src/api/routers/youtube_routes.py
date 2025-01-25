@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from loguru import logger
+from src.commonLib.lib import utils
 import yt_dlp
 import instaloader
 from datetime import datetime
@@ -74,7 +75,7 @@ def clean_video_info(raw_info):
         "title": raw_info.get("title"),
         "description": raw_info.get("description"),
         "thumbnail": raw_info.get("thumbnail"),
-        "duration": raw_info.get("duration"),
+        "duration": utils.seconds_to_hms(raw_info.get("duration")),
         "upload_date": raw_info.get("upload_date"),
         "video_qualities": video_qualities,
     }
