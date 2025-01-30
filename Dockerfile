@@ -14,7 +14,7 @@ RUN pip install poetry
 RUN poetry install --no-root
 
 # Expose the application port (adjust as needed)
-EXPOSE 8000
+EXPOSE 8002
 
 # Command to run your FastAPI app (adjust as needed)
 CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
