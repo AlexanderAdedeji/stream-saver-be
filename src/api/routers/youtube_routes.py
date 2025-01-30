@@ -1,9 +1,11 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Query
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse,FileResponse
+import requests
 from loguru import logger
 from src.commonLib.lib.utils import utils
 import yt_dlp
-import instaloader
+
+
 from datetime import datetime
 from typing import List, Optional
 from pydantic import HttpUrl
@@ -16,12 +18,9 @@ from src.schemas.stream_saver_schema import (
 )
 
 # Initialize FastAPI app and router
-app = FastAPI()
+
 router = APIRouter()
 
-
-# Include router in the app
-app.include_router(router)
 
 
 def get_video_info(url: str):
@@ -101,134 +100,104 @@ async def youtube_metadata(url: str):
         raise HTTPException(status_code=500, detail="Failed to process YouTube video")
 
 
-# @router.post("/video/download")
-# async def download_youtube_video(url: str, quality: str):
-#     """Download YouTube video in specified quality"""
+
+
+
+# def download_youtube_video_backend(url: str, quality: str) -> str:
+#     ydl_opts = {
+#         "outtmpl": "./downloads/%(title)s.%(ext)s",  # Output path
+#     }
 #     try:
-#         # Validate quality format
-#         if not quality.endswith("p") or not quality[:-1].isdigit():
-#             raise HTTPException(
-#                 status_code=400,
-#                 detail=f"Invalid quality format: {quality}. Use format like '720p'",
+#         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+#             # Fetch available formats
+#             info_dict = ydl.extract_info(url, download=False)  # Fetch metadata
+#             available_formats = [
+#                 (f["format_id"], f["height"])
+#                 for f in info_dict["formats"]
+#                 if f.get("height") and f.get("acodec") != "none"  # Ensure both video and audio
+#             ]
+
+#             # Check if the requested quality is available
+#             matching_format = next(
+#                 (f for f in available_formats if f[1] == int(quality)), None
 #             )
 
-#         # Extract available formats
-#         ydl_opts = {
-#             "quiet": True,
-#             "no_warnings": True,
-#         }
+#             if not matching_format:
+#                 raise HTTPException(
+#                     status_code=404,
+#                     detail=f"Requested quality {quality}p not available. Available qualities: {[f[1] for f in available_formats]}",
+#                 )
 
-#         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-#             info = ydl.extract_info(url, download=False)
-#             formats = info.get("formats", [])
+#             # Update options to download the matching format
+#             ydl_opts["format"] = matching_format[0]
+#             ydl = yt_dlp.YoutubeDL(ydl_opts)
+#             ydl.download([url])
 
-#             # Filter formats by the desired quality
-#             # target_height = int(video.quality[:-1])
-#             # selected_format = None
-#             # for fmt in formats:
-#             #     if fmt.get("height") == target_height and fmt.get("acodec") != "none":
-#             #         selected_format = fmt
-#             #         break
-#             # return formats
-#             # if not selected_format:
-#             #     raise HTTPException(
-#             #         status_code=404,
-#             #         detail=f"Requested quality {video.quality} not available. Please choose from available qualities.",
-#             #     )
-
-#             # # Prepare download options
-#             # ydl_opts.update(
-#             #     {
-#             #         "format": selected_format["format_id"],
-#             #         "outtmpl": f"{info['title']}.%(ext)s",
-#             #     }
-#             # )
-
-#             # Download the video
-
-#         ydl.download([url])
-
-#         filename = ydl.prepare_filename(info)
-
-#         def file_iterator(file_path: str):
-#             with open(file_path, "rb") as f:
-#                 yield from f
-
-#         response = StreamingResponse(
-#             file_iterator(filename),
-#             media_type="video/mp4",
-#         )
-#         response.headers["Content-Disposition"] = (
-#             f'attachment; filename="{os.path.basename(filename)}"'
-#         )
-
-#         return response
-
-#         # return {
-#         #     "message": f"Video '{info['title']}' downloaded successfully in {quality} quality.",
-#         #     "title": info["title"],
-#         #     "duration": info["duration"],
-#         #     "thumbnail": info["thumbnail"],
-#         #     "available_qualities": list(
-#         #         set(fmt.get("height") for fmt in formats if fmt.get("height"))
-#         #     ),
-#         # }
-
-#     except HTTPException as he:
-#         raise he
+#             # Prepare the filename
+#             return ydl.prepare_filename(info_dict)
 #     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Video download failed: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
 
-import httpx
 
-@router.post("/video/download")
-async def download_youtube_video(url: str, quality: str):
-    """Download YouTube video in specified quality"""
+def download_youtube_video_backend(url: str, quality: str) -> str:
+    """Download YouTube video with fallback to highest available quality."""
+
+    ydl_opts = {
+        "outtmpl": "./downloads/%(title)s.%(ext)s",  # Output path
+        "merge_output_format": "mp4",  # Ensure output is always MP4
+    }
+
     try:
-        # Validate quality format
-        if not quality.endswith("p") or not quality[:-1].isdigit():
-            raise HTTPException(400, "Invalid quality format")
-
-        # Get video info
-        ydl_opts = {"quiet": True, "no_warnings": True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            formats = info.get("formats", [])
+            # ✅ Fetch available formats
+            info_dict = ydl.extract_info(url, download=False)  
             
-            # Find best format
-            height = int(quality[:-1])
-            selected_format = next(
-                (f for f in formats 
-                 if f.get('height') == height 
-                 and f.get('vcodec') != 'none'),
-                None
+            available_formats = sorted(
+                [
+                    (f["format_id"], f["height"])
+                    for f in info_dict["formats"]
+                    if f.get("height") and f.get("acodec") != "none"  # Ensure video has audio
+                ],
+                key=lambda x: x[1],  # Sort by height
+                reverse=True,  # Highest quality first
             )
 
-            if not selected_format:
-                raise HTTPException(404, "Quality not available")
+            if not available_formats:
+                raise HTTPException(status_code=404, detail="No suitable video formats available")
 
-            # Get direct download URL
-            video_url = selected_format['url']
+            # ✅ Check if requested quality is available
+            matching_format = next((f for f in available_formats if f[1] == int(quality)), None)
 
-        # Stream the video content
-        async def stream_video():
-            async with httpx.AsyncClient() as client:
-                async with client.stream("GET", video_url) as response:
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
+            if not matching_format:
+                # ✅ Fallback to the highest available quality
+                matching_format = available_formats[0]
+                fallback_quality = matching_format[1]
+                logger.warning(f"Requested quality {quality}p not available. Falling back to {fallback_quality}p.")
 
-        # Set download headers
-        filename = f"{info['title']}_{quality}.mp4"
-        return StreamingResponse(
-            stream_video(),
-            media_type="video/mp4",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}",
-                "Content-Type": "video/mp4"
-            }
-        )
+            # ✅ Update options to download the best-matched format
+            ydl_opts["format"] = matching_format[0]
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+
+            # ✅ Prepare filename
+            return ydl.prepare_filename(info_dict)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
+
+
+@router.post("/video/download")
+async def download_video(url: str = Query(...), quality: str = Query("720")):
+    try:
+        file_path = download_youtube_video_backend(url, quality)
+
+        if not file_path:
+            raise HTTPException(status_code=404, detail="Video not found or failed to download.")
+
+        return FileResponse(file_path, media_type="video/mp4", filename=file_path.split("/")[-1])
 
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(500, f"Download failed: {str(e)}")
+        logger.error(f"Error processing YouTube download: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error.")
