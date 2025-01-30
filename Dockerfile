@@ -1,5 +1,5 @@
-# Use the official Python 3.13 image
-FROM python:3.13
+# Use the official Python 3.12 image (since your pyproject.toml specifies Python 3.12)
+FROM python:3.12
 
 # Set the working directory
 WORKDIR /app
@@ -10,14 +10,14 @@ COPY . /app
 # Install Poetry
 RUN pip install poetry
 
-# Install dependencies
-RUN poetry install --no-root
+# Configure poetry to not create a virtual environment inside the container
+RUN poetry config virtualenvs.create false
 
-# Set PYTHONPATH to include the 'src' directory
-ENV PYTHONPATH="${PYTHONPATH}:/app/src"
+# Install dependencies including the current project
+RUN poetry install --no-interaction --no-ansi
 
-# Expose the application port (adjust as needed)
-EXPOSE 8000
+# Expose the application port
+EXPOSE 8002
 
 # Command to run your FastAPI app
-CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
