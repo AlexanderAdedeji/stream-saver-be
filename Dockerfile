@@ -4,23 +4,17 @@ FROM python:3.13
 # Set the working directory
 WORKDIR /app
 
+# Copy project files into the container
+COPY . /app
+
 # Install Poetry
 RUN pip install poetry
-
-
-RUN poetry config virtualenvs.create false
-
-
-COPY pyproject.toml poetry.lock ./
 
 # Install dependencies
 RUN poetry install --no-root
 
-
-COPY . .
-
-
+# Expose the application port (adjust as needed)
 EXPOSE 8002
 
-# Command to run the FastAPI app
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run your FastAPI app (adjust as needed)
+CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
