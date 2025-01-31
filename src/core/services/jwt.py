@@ -82,7 +82,3 @@ class JWTService:
             raise InvalidTokenException(detail="Malformed token structure.")
 
 jwt_service = JWTService()
-
-# Example usage:
-# token = jwt_service.generate_token({"id": "123", "email": "user@example.com"})
-# payload = jwt_service.decode_token(token)
