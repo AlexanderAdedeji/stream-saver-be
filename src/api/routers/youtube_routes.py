@@ -2,7 +2,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse, StreamingResponse,FileResponse
 import requests
 from loguru import logger
-from src.commonLib.lib.utils import utils
+from src.commonLib.utils.utils import utils
 import yt_dlp
 
 
