@@ -14,26 +14,27 @@ from src.database.sessions.mongo_client import client
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-
-
-
-# Initialize database schema
+# Initialize database schema (For relational databases)
 Base.metadata.create_all(bind=engine)
 
 def create_application() -> FastAPI:
-    app = FastAPI(title=settings.PROJECT_NAME)
+    """Initialize FastAPI app with configurations."""
+    app = FastAPI(
+        title=settings.PROJECT_NAME,
+        description="StreamSaver API for downloading videos & images from various platforms.",
+        version=settings.VERSION,
+    )
 
     # CORS configuration
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*","https://www.youtube.com/watch?v=8cRvjCK9634"],
+        allow_origins=settings.ALLOWED_ORIGINS.split(","),
         allow_credentials=True,
         allow_methods=settings.ALLOWED_METHODS.split(","),
         allow_headers=["*"],
     )
 
-    # Include global router
+    # Include API routers
     app.include_router(global_router, prefix=settings.API_URL_PREFIX)
 
     # Exception handlers
@@ -45,9 +46,10 @@ def create_application() -> FastAPI:
     return app
 
 def register_exception_handlers(app: FastAPI):
+    """Handles exceptions globally."""
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-        logger.warning(f"HTTP exception: {request.method} {request.url} - {exc.detail}")
+        logger.warning(f"HTTP {exc.status_code}: {exc.detail} | {request.method} {request.url}")
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
@@ -55,7 +57,7 @@ def register_exception_handlers(app: FastAPI):
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        logger.warning(f"Validation error: {request.method} {request.url} - {exc.errors()}")
+        logger.warning(f"Validation error: {exc.errors()} | {request.method} {request.url}")
         return JSONResponse(
             status_code=422,
             content={"detail": exc.errors()},
@@ -63,13 +65,14 @@ def register_exception_handlers(app: FastAPI):
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Unhandled error: {str(exc)} - Request: {request.method} {request.url}")
+        logger.error(f"Unhandled error: {str(exc)} | {request.method} {request.url}")
         return JSONResponse(
             status_code=500,
             content={"detail": "An unexpected error occurred."},
         )
 
 def register_event_handlers(app: FastAPI):
+    """Handles startup and shutdown events."""
     @app.on_event("startup")
     async def startup_db_client():
         app.mongodb_client = client
@@ -83,8 +86,6 @@ def register_event_handlers(app: FastAPI):
         logger.info("MongoDB client shutdown complete")
 
 app = create_application()
-
-
 
 @app.get("/", include_in_schema=False)
 async def root():

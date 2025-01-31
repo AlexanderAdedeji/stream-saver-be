@@ -6,7 +6,7 @@ authors = ["AlexAdedeji <alexadedeji15@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.12"
 fastapi = "^0.115.6"
 uvicorn = "^0.34.0"
 pydantic-settings = "^2.7.1"
@@ -24,6 +24,7 @@ instaloader = "^4.14"
 requests = "^2.32.3"
 
 ffmpeg = "^1.4"
+autodocify-cli = "^0.4.0"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -1,12 +1,8 @@
-# StreamSaver Backend
+# StreamSaver Backend API
 
 ## Overview
 
-This document provides a comprehensive guide to the StreamSaver backend application.  This backend API provides functionalities for retrieving metadata and downloading media from various social media platforms, including YouTube, Instagram, and Facebook.
-
-[//]: # (This is a comment, it won't be rendered in the README)
-
-[TOC]
+This document provides comprehensive information for developers interacting with the StreamSaver backend API.  This API allows for metadata retrieval and download functionality for YouTube, Instagram, and Facebook posts.  It leverages FastAPI, SQLAlchemy, and MongoDB for a robust and efficient architecture.
 
 ## Table of Contents
 
@@ -14,9 +10,9 @@ This document provides a comprehensive guide to the StreamSaver backend applicat
 * [Overview](#overview)
 * [Installation Instructions](#installation-instructions)
 * [Usage Guide](#usage-guide)
-    * [YouTube API Usage](#youtube-api-usage)
-    * [Instagram API Usage](#instagram-api-usage)
-    * [Facebook API Usage](#facebook-api-usage)
+    * [YouTube Integration](#youtube-integration)
+    * [Instagram Integration](#instagram-integration)
+    * [Facebook Integration](#facebook-integration)
 * [Configuration](#configuration)
 * [Technical Details](#technical-details)
 * [Contribution Guidelines](#contribution-guidelines)
@@ -25,164 +21,133 @@ This document provides a comprehensive guide to the StreamSaver backend applicat
 * [Support](#support)
 
 
-## Project Title
-
-StreamSaver Backend
-
-
 ## Installation Instructions
 
 **Prerequisites:**
 
-* Python 3.7 or higher
-* PostgreSQL
-* MongoDB
-* Node.js (for frontend, if applicable)
+* Python 3.9 or higher
+* `pip` (Python package installer)
+* PostgreSQL (database)
+* MongoDB (database)
 
-
-**Setup:**
+**Steps:**
 
 1. **Clone the repository:**
-   ```bash
-   git clone <repository_url>
-   cd streamSaver/backend
-   ```
 
-2. **Create a virtual environment:**
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
+```bash
+git clone <repository_url>
+cd streamSaver/backend
+```
+
+2. **Create a virtual environment (recommended):**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
 
 3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
 
-4. **Configure environment variables:**  Copy the `.env.example` file to `.env` and populate it with your database credentials, API keys, and other necessary configurations.
+```bash
+pip install -r requirements.txt
+```
 
-5. **Database Setup:**
-   * **PostgreSQL:** Ensure PostgreSQL is running and the database specified in your `.env` file exists.  You might need to create the database manually.
-   * **MongoDB:** Ensure MongoDB is running and the database specified in your `.env` file exists.
+4. **Configure environment variables:**  Create a `.env` file based on `.env.example` and populate it with your database credentials, API keys, and other necessary settings.
 
-
-6. **Run migrations (if applicable):**  If your project uses a database migration system (e.g., Alembic), run the necessary commands to apply migrations.  Example:
-   ```bash
-   alembic upgrade head
-   ```
+5. **Run database migrations (if applicable):**  The project might include database migration scripts (e.g., Alembic).  Execute these scripts to set up the database schema.
 
 
 ## Usage Guide
 
+The API is structured with separate endpoints for YouTube, Instagram, and Facebook integrations. Each section details usage examples.  Remember to replace placeholders like `<YOUR_API_KEY>` with your actual values.
 
-The StreamSaver backend exposes several APIs for accessing different social media platforms.  Below are examples demonstrating their usage.
 
-### YouTube API Usage
+### YouTube Integration
 
-**Retrieve Metadata:**
+**Metadata Retrieval:**
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/youtube/video/metadata?url=<youtube_video_url>"
+curl -X GET "http://localhost:8000/api/v1/youtube/video/metadata?url=<YOUTUBE_VIDEO_URL>"
 ```
 
-**Download Video:**
+**Download:**
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/youtube/video/download" -H "Content-Type: application/json" -d '{"url": "<youtube_video_url>", "quality": "720"}'
+curl -X POST "http://localhost:8000/api/v1/youtube/video/download" -H "Content-Type: application/json" -d '{"url": "<YOUTUBE_VIDEO_URL>", "quality": "720"}'
 ```
 
+### Instagram Integration
 
-### Instagram API Usage
-
-**Retrieve Metadata:**
+**Metadata Retrieval:**
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/instagram/metadata?url=<instagram_post_url>"
+curl -X GET "http://localhost:8000/api/v1/instagram/metadata?url=<INSTAGRAM_POST_URL>"
 ```
 
-**Download Media:**
+**Download:**
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/instagram/download?url=<instagram_post_url>&media_index=0"
+curl -X GET "http://localhost:8000/api/v1/instagram/download?url=<INSTAGRAM_POST_URL>&media_index=0"
 ```
 
+### Facebook Integration
 
-### Facebook API Usage
-
-**Retrieve Metadata:**
+**Metadata Retrieval:**
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/facebook/metadata" -H "Content-Type: application/json" -d '{ "url": "<facebook_post_url>", "access_token": "<your_facebook_access_token>" }'
+curl -X POST "http://localhost:8000/api/v1/facebook/metadata" -H "Content-Type: application/json" -d '{
+  "url": "<FACEBOOK_POST_URL>",
+  "access_token": "<YOUR_FACEBOOK_ACCESS_TOKEN>"
+}'
 ```
 
 
 ## Configuration
 
-The application's behavior can be customized through environment variables defined in the `.env` file.  Key configuration parameters include:
+The API's behavior can be customized through environment variables defined in the `.env` file. Key settings include:
 
-* Database connection strings (PostgreSQL and MongoDB)
-* API keys for Facebook, Instagram (if applicable)
-* Server settings (port, allowed origins, etc.)
-* JWT settings (secret key, algorithm, expiration time)
+* **Database connections:**  PostgreSQL and MongoDB connection strings.
+* **API keys:**  For accessing third-party APIs (Facebook, etc.).
+* **Logging levels:**  Control the verbosity of logging output.
 
 
 ## Technical Details
 
-**Tech Stack:**
+**Technology Stack:**
 
-* **Backend:** FastAPI (Python), SQLAlchemy (ORM),  yt-dlp, instaloader, requests
-* **Database:** PostgreSQL, MongoDB
+* **Backend:** FastAPI (Python)
+* **Database:** PostgreSQL (Relational), MongoDB (NoSQL)
+* **ORM:** SQLAlchemy (PostgreSQL), Pydantic (Data validation)
 * **Authentication:** JWT (JSON Web Tokens)
-
+* **Other Libraries:**  yt-dlp, instaloader, requests, loguru
 
 **Architecture:**
 
-The application follows a RESTful API architecture.  It uses FastAPI for routing and handling requests, SQLAlchemy for database interaction (PostgreSQL), and interacts with social media APIs via external libraries.  MongoDB is used for any non-relational data storage needs.
-
-
-**Components:**
-
-* API Routers (for YouTube, Instagram, Facebook, and Authentication)
-* Database interaction layer (SQLAlchemy and MongoDB driver)
-* Authentication and Authorization (JWT)
-* Service layer for business logic
-* Repository layer for data access
+The API is designed as a microservice, with clear separation of concerns into routers, services, and repositories.  Data access is handled efficiently using appropriate ORMs for relational and NoSQL databases.
 
 
 ## Contribution Guidelines
 
+Contributions are welcome! Please follow these steps:
+
 1. Fork the repository.
 2. Create a new branch for your feature or bug fix.
-3. Make your changes and commit them with clear and concise messages.
-4. Ensure your code adheres to the project's coding style (check for existing code style guidelines).
-5. Write comprehensive unit tests for your code.
-6. Submit a pull request with a detailed description of your changes.
+3. Make your changes and ensure they pass all tests.
+4. Submit a pull request with a clear description of your changes.
 
 
 ## License
 
-This project is licensed under the <insert license name here> license.  See the LICENSE file for details.
+This project is licensed under the <license_name> license.  See the [LICENSE](LICENSE) file for details.
 
 
 ## FAQs
 
-* **Q: What are the required permissions for Facebook API access?**
+* **Q: What error codes are used?**  A: Standard HTTP status codes are used (e.g., 200 OK, 404 Not Found, 500 Internal Server Error).  More specific error messages are included in the response body.
 
-   **A:**  For public Page posts: `pages_manage_posts`. For user posts: `user_posts`.  Make sure to adjust accordingly in the FacebookPostRequest model.
-
-* **Q: How do I handle rate limits?**
-
-   **A:**  The code includes rate-limiting middleware for specific routes (currently commented out).  Uncomment and configure it as needed, and consider implementing exponential backoff for retry logic.
-
-* **Q: How to debug the application?**
-
-  **A:** Use a debugger such as pdb (python debugger) or add print statements/logging messages to the code.  Make sure to set the logging level appropriately in your `.env` file.
+* **Q: How do I handle authentication?** A: JWT authentication is used.  You'll need to obtain a token through the `/auth/login` endpoint and include it in the `Authorization` header of subsequent requests.
 
 
 ## Support
 
-For support or to report issues, please open an issue on the GitHub repository.  You can also contact the developers at `<contact_email>`.
-
-
-
-## Generated using Autodocify https://pypi.org/project/autodocify-cli/
+For support or to report issues, please create a new issue on the [GitHub repository](<repository_url>).
