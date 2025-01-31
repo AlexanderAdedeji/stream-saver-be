@@ -3,6 +3,7 @@ import uuid
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
+from src.api.routers import analytics_routes
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 from slowapi import  _rate_limit_exceeded_handler
@@ -113,16 +114,16 @@ def register_event_handlers(app: FastAPI):
         try:
             app.mongodb_client = client
             app.mongodb = app.mongodb_client.get_database(settings.MONGO_DB_NAME)
-            logger.info(" ✅ MongoDB connection established successfully")
+            logger.info("  MongoDB connection established successfully")
         except Exception as e:
-            logger.error(f" ❌ Failed to connect to MongoDB: {str(e)}")
+            logger.error(f"  Failed to connect to MongoDB: {str(e)}")
 
     @app.on_event("shutdown")
     async def shutdown_db_client():
         """ MongoDB Connection on Shutdown"""
         logger.info(" 📴 Shutting down MongoDB client...")
         app.mongodb_client.close()
-        logger.info(" ✅ MongoDB client shutdown complete")
+        logger.info(" MongoDB client shutdown complete")
 
     @app.middleware("http")
     async def performance_monitoring_middleware(request: Request, call_next):
@@ -138,6 +139,8 @@ app = create_application()
 
 # Add Rate-Limit Exception Handler
 app.add_exception_handler(429, _rate_limit_exceeded_handler)
+
+
 
 @app.get("/", include_in_schema=False)
 async def root():

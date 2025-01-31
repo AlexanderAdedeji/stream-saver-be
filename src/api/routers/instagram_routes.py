@@ -8,7 +8,7 @@ import instaloader
 from datetime import datetime
 from typing import List, Optional
 from pydantic import HttpUrl
-from src.schemas.stream_saver_schema import InstagramPostResponse, VideoMetadata
+from src.schemas.instagram_schema import InstagramPostResponse
 
 # Initialize FastAPI app and router
 app = FastAPI()

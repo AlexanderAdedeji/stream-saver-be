@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from slowapi.util import get_remote_address
 from src.commonLib.utils.logger_config import logger
 from src.api.routers import (
+    analytics_routes,
     authentication_routes,
     facebook_routes,
     youtube_routes,
@@ -19,6 +20,7 @@ api_routes = [
     {"router": instagram_routes.router, "prefix": "/instagram", "tag": "Instagram"},
     {"router": user_routes.user_router, "prefix": "/users", "tag": "Users"},
     {"router": facebook_routes.router, "prefix": "/facebook", "tag": "Facebook"},
+        {"router": analytics_routes.router, "prefix": "/analytics", "tag": "Analytics"}
 ]
 
 

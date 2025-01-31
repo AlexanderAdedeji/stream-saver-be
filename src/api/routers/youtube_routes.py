@@ -6,7 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, Request, Depends
 from fastapi.responses import StreamingResponse
 from src.commonLib.utils.logger_config import logger
-from src.schemas.stream_saver_schema import InstagramPostResponse
+
 
 router = APIRouter()
 
@@ -48,7 +48,7 @@ def process_media(post: instaloader.Post) -> list:
             media_url = node.get("video_url") if node.get("is_video") else node["display_resources"][-1]["src"]
 
             if not media_url:
-                logger.warning(f"⚠️ Missing media URL for index {index}")
+                logger.warning(f" Missing media URL for index {index}")
                 continue  
 
             media.append({"url": media_url, "index": index, "type": media_type})
