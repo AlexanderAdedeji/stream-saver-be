@@ -1,40 +1,33 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query
-from fastapi.responses import RedirectResponse, StreamingResponse,FileResponse
-import requests
-from loguru import logger
-from src.commonLib.utils.utils import utils
-import yt_dlp
-
-
-from datetime import datetime
-from typing import List, Optional
-from pydantic import HttpUrl
-
 import os
-from src.schemas.stream_saver_schema import (
-    InstagramPostResponse,
-    VideoMetadata,
-    YoutubeDownloadForm,
-)
+import uuid
+import yt_dlp
+import time
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, Query, Request, Depends
+from fastapi.responses import FileResponse
+from slowapi.util import get_remote_address
+from slowapi import Limiter
+from src.commonLib.utils.logger_config import logger
+from src.commonLib.utils.utils import utils
+from src.schemas.stream_saver_schema import VideoMetadata
 
-# Initialize FastAPI app and router
+
+from src.limiter import limiter
 
 router = APIRouter()
 
-
+#  Ensure the downloads folder exists
+DOWNLOADS_FOLDER = os.path.join(os.getcwd(), "downloads")
+os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
 
 def get_video_info(url: str):
-    """Fetch YouTube video information using yt_dlp"""
+    """Fetch YouTube video metadata using yt_dlp"""
     ydl_opts = {"quiet": True, "no_warnings": True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(url, download=False)
 
-
-
-
 def clean_video_info(raw_info):
-    """Clean and structure YouTube video information"""
-    # Extract video qualities with details
+    """Structure YouTube video metadata in a readable format."""
     seen_qualities = set()
     video_qualities = []
 
@@ -43,24 +36,19 @@ def clean_video_info(raw_info):
             quality = f"{fmt['height']}p"
             if quality not in seen_qualities:
                 seen_qualities.add(quality)
-
-                # Calculate file size in MB if available
                 size_in_mb = (
                     f"{round(fmt['filesize'] / (1024 * 1024), 1)} MB"
                     if fmt.get("filesize")
                     else "Unknown"
                 )
-
                 video_qualities.append({
                     "quality": quality,
-                    "format": fmt.get("ext", "mp4"),  # Default to mp4 if not provided
+                    "format": fmt.get("ext", "mp4"),
                     "size": size_in_mb,
                 })
 
-    # Sort qualities descending (1440p > 1080p > 720p etc.)
     video_qualities.sort(key=lambda x: int(x["quality"][:-1]), reverse=True)
 
-    # Convert views and likes into readable formats
     def format_large_number(num):
         if not num:
             return "Unknown"
@@ -70,7 +58,6 @@ def clean_video_info(raw_info):
             return f"{num // 1_000}K"
         return str(num)
 
-    # Format the response to match the required structure
     return {
         "title": raw_info.get("title", "Unknown Title"),
         "thumbnail": raw_info.get("thumbnail", ""),
@@ -83,121 +70,73 @@ def clean_video_info(raw_info):
         "qualities": video_qualities,
     }
 
-
-@router.get("/video/metadata")
-async def youtube_metadata(url: str):
-    """Fetch YouTube video metadata"""
+@router.get("/video/metadata", dependencies=[Depends(limiter.limit("10/minute"))])
+async def youtube_metadata(url: str, request: Request):
+    """Fetch YouTube video metadata with rate-limiting."""
+    trace_id = str(uuid.uuid4())
     try:
         raw_info = get_video_info(url)
         if not raw_info:
             raise HTTPException(status_code=404, detail="Video not found")
-
         cleaned_info = clean_video_info(raw_info)
-        # return VideoMetadata(**cleaned_info)
+
+        logger.info(f"[TRACE {trace_id}] 🎬 Video metadata retrieved: {url}")
         return cleaned_info
     except Exception as e:
-        logger.error(f"Error fetching YouTube metadata: {e}")
+        logger.error(f"[TRACE {trace_id}]  Error fetching YouTube metadata: {e}")
         raise HTTPException(status_code=500, detail="Failed to process YouTube video")
-
-
-
-
-
-# def download_youtube_video_backend(url: str, quality: str) -> str:
-#     ydl_opts = {
-#         "outtmpl": "./downloads/%(title)s.%(ext)s",  # Output path
-#     }
-#     try:
-#         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-#             # Fetch available formats
-#             info_dict = ydl.extract_info(url, download=False)  # Fetch metadata
-#             available_formats = [
-#                 (f["format_id"], f["height"])
-#                 for f in info_dict["formats"]
-#                 if f.get("height") and f.get("acodec") != "none"  # Ensure both video and audio
-#             ]
-
-#             # Check if the requested quality is available
-#             matching_format = next(
-#                 (f for f in available_formats if f[1] == int(quality)), None
-#             )
-
-#             if not matching_format:
-#                 raise HTTPException(
-#                     status_code=404,
-#                     detail=f"Requested quality {quality}p not available. Available qualities: {[f[1] for f in available_formats]}",
-#                 )
-
-#             # Update options to download the matching format
-#             ydl_opts["format"] = matching_format[0]
-#             ydl = yt_dlp.YoutubeDL(ydl_opts)
-#             ydl.download([url])
-
-#             # Prepare the filename
-#             return ydl.prepare_filename(info_dict)
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
-
 
 def download_youtube_video_backend(url: str, quality: str) -> str:
     """Download YouTube video with fallback to highest available quality."""
-
     ydl_opts = {
-        "outtmpl": "./downloads/%(title)s.%(ext)s",  # Output path
-        "merge_output_format": "mp4",  # Ensure output is always MP4
+        "outtmpl": f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s",
+        "merge_output_format": "mp4",
     }
-
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # ✅ Fetch available formats
-            info_dict = ydl.extract_info(url, download=False)  
-            
+            info_dict = ydl.extract_info(url, download=False)
             available_formats = sorted(
                 [
                     (f["format_id"], f["height"])
                     for f in info_dict["formats"]
-                    if f.get("height") and f.get("acodec") != "none"  # Ensure video has audio
+                    if f.get("height") and f.get("acodec") != "none"
                 ],
-                key=lambda x: x[1],  # Sort by height
-                reverse=True,  # Highest quality first
+                key=lambda x: x[1],
+                reverse=True,
             )
 
             if not available_formats:
                 raise HTTPException(status_code=404, detail="No suitable video formats available")
 
-            # ✅ Check if requested quality is available
             matching_format = next((f for f in available_formats if f[1] == int(quality)), None)
-
             if not matching_format:
-                # ✅ Fallback to the highest available quality
-                matching_format = available_formats[0]
-                fallback_quality = matching_format[1]
-                logger.warning(f"Requested quality {quality}p not available. Falling back to {fallback_quality}p.")
+                matching_format = available_formats[0]  # Fallback to best quality
+                logger.warning(f"Requested quality {quality}p not available. Falling back to {matching_format[1]}p.")
 
-            # ✅ Update options to download the best-matched format
             ydl_opts["format"] = matching_format[0]
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
 
-            # ✅ Prepare filename
             return ydl.prepare_filename(info_dict)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error downloading video: {str(e)}")
 
-
-@router.post("/video/download")
-async def download_video(url: str = Query(...), quality: str = Query("720")):
+@router.post("/video/download", dependencies=[Depends(limiter.limit("5/minute"))])
+async def download_video(request: Request,url: str = Query(...),   quality: str = Query("720")):
+    """Download a YouTube video with rate-limiting."""
+    trace_id = str(uuid.uuid4())
     try:
         file_path = download_youtube_video_backend(url, quality)
 
-        if not file_path:
+        if not file_path or not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Video not found or failed to download.")
 
-        return FileResponse(file_path, media_type="video/mp4", filename=file_path.split("/")[-1])
+        logger.info(f"[TRACE {trace_id}]  Video downloaded: {file_path}")
+        return FileResponse(file_path, media_type="video/mp4", filename=os.path.basename(file_path))
 
     except HTTPException as he:
         raise he
     except Exception as e:
-        logger.error(f"Error processing YouTube download: {e}")
+        logger.error(f"[TRACE {trace_id}]  Error processing YouTube download: {e}")
         raise HTTPException(status_code=500, detail="Internal server error.")

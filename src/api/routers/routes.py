@@ -1,9 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from slowapi.util import get_remote_address
-from slowapi import Limiter
 from src.commonLib.utils.logger_config import logger
-
-# Import API routers
 from src.api.routers import (
     authentication_routes,
     facebook_routes,
@@ -11,12 +8,9 @@ from src.api.routers import (
     user_routes,
     instagram_routes,
 )
-
+from src.limiter import limiter 
 
 router = APIRouter()
-
-# Initialize Limiter (for rate-limiting)
-limiter = Limiter(key_func=get_remote_address)
 
 # List of all routers for dynamic inclusion
 api_routes = [
@@ -27,7 +21,7 @@ api_routes = [
     {"router": facebook_routes.router, "prefix": "/facebook", "tag": "Facebook"},
 ]
 
-# Dynamically register routers
+
 for route in api_routes:
     router.include_router(
         route["router"],
@@ -35,10 +29,10 @@ for route in api_routes:
         tags=[route["tag"]],
         responses={404: {"description": "Not found"}},
     )
-    logger.info(f" Registered route: {route['prefix']} under {route['tag']}")
+    logger.info(f"  Registered route: {route['prefix']} under {route['tag']}")
 
 
-@router.get("/health-check")
-@limiter.limit("5/minute") 
-async def health_check():
-    return {"status": "OK"}
+@router.get("/health", dependencies=[Depends(limiter.limit("5/minute"))])
+async def health_check(request: Request):
+    """Health check endpoint with rate limiting."""
+    return {"status": "ok"}
