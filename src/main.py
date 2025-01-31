@@ -1,3 +1,4 @@
+import time
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
@@ -44,6 +45,27 @@ def create_application() -> FastAPI:
     register_event_handlers(app)
 
     return app
+
+
+
+async def request_logging_middleware(request: Request, call_next):
+    """Logs all incoming API requests & response times."""
+    start_time = time.time()
+
+    # Log request details
+    logger.info(f"📥 Request: {request.method} {request.url}")
+
+    # Process request
+    response = await call_next(request)
+
+    # Calculate response time
+    duration = time.time() - start_time
+
+    # Log response details
+    logger.info(f"📤 Response: {request.method} {request.url} | Status: {response.status_code} | Time: {duration:.3f}s")
+
+    return response
+
 
 def register_exception_handlers(app: FastAPI):
     """Handles exceptions globally."""

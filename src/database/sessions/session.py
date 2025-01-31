@@ -15,9 +15,9 @@ DATABASE_URL = settings.POSTGRES_DB_URL
 
 # Retry configuration for establishing the database connection
 @retry(
-    stop=stop_after_attempt(3),  # Retry up to 3 times
-    wait=wait_exponential(multiplier=1, min=2, max=10),  # Exponential backoff
-    reraise=True,  # Raise the last exception if all retries fail
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),  
+    reraise=True, 
 )
 def get_engine():
     try:
@@ -25,10 +25,10 @@ def get_engine():
             DATABASE_URL,
             pool_size=20,
             max_overflow=10,
-            pool_timeout=30,  # Increased timeout for better resilience
-            pool_pre_ping=True,  # Enable connection health checks
-            pool_recycle=1800,  # Recycle connections after 30 minutes
-            connect_args={"sslmode": "require"},  # Enforce SSL for secure communication
+            pool_timeout=30,  
+            pool_pre_ping=True,  
+            pool_recycle=1800, 
+            connect_args={"sslmode": "require"},
         )
         logger.info("Successfully created PostgreSQL engine.")
         return engine
