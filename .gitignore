@@ -7,7 +7,7 @@ __pycache__/
 
 logs/
 *.log
-
+downloads/
 # Distribution / packaging
 .Python
 build/
