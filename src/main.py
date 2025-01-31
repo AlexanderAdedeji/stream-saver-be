@@ -1,22 +1,21 @@
 import time
+import uuid
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
-import logging
+from src.commonLib.utils.logger_config import logger
 from src.core.settings.configurations.config import settings
 from src.api.routers.routes import router as global_router
 from src.database.base import Base
 from src.database.sessions.session import engine
 from src.database.sessions.mongo_client import client
 
-# Initialize logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Initialize database schema (For relational databases)
+#  Initialize database schema (For relational databases)
 Base.metadata.create_all(bind=engine)
+
 
 def create_application() -> FastAPI:
     """Initialize FastAPI app with configurations."""
@@ -29,85 +28,112 @@ def create_application() -> FastAPI:
     # CORS configuration
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_ORIGINS.split(","),
+        allow_origins=settings.ALLOWED_ORIGINS.split(","), 
         allow_credentials=True,
         allow_methods=settings.ALLOWED_METHODS.split(","),
         allow_headers=["*"],
     )
 
-    # Include API routers
+    #  Add API Routes
     app.include_router(global_router, prefix=settings.API_URL_PREFIX)
 
-    # Exception handlers
+    #  Register Exception Handlers
     register_exception_handlers(app)
 
-    # Event handlers
+    #  Register Event Handlers
     register_event_handlers(app)
 
     return app
 
 
-
 async def request_logging_middleware(request: Request, call_next):
-    """Logs all incoming API requests & response times."""
+    """Middleware to log all incoming API requests and response times."""
     start_time = time.time()
+    trace_id = str(uuid.uuid4()) 
 
     # Log request details
-    logger.info(f"📥 Request: {request.method} {request.url}")
+    logger.info(f"📥 [TRACE {trace_id}] {request.method} {request.url}")
 
     # Process request
     response = await call_next(request)
 
-    # Calculate response time
+    #  Compute response time
     duration = time.time() - start_time
 
-    # Log response details
-    logger.info(f"📤 Response: {request.method} {request.url} | Status: {response.status_code} | Time: {duration:.3f}s")
+    #  Log response details
+    logger.info(f"📤 [TRACE {trace_id}] {request.method} {request.url} | Status: {response.status_code} | Time: {duration:.3f}s")
 
     return response
 
 
 def register_exception_handlers(app: FastAPI):
-    """Handles exceptions globally."""
+    """Handles exceptions globally with detailed logging."""
+
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-        logger.warning(f"HTTP {exc.status_code}: {exc.detail} | {request.method} {request.url}")
+        trace_id = str(uuid.uuid4())  
+        logger.warning(f" [TRACE {trace_id}] HTTP {exc.status_code}: {exc.detail} | {request.method} {request.url}")
+
         return JSONResponse(
             status_code=exc.status_code,
-            content={"detail": exc.detail},
+            content={"trace_id": trace_id, "detail": exc.detail},
         )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        logger.warning(f"Validation error: {exc.errors()} | {request.method} {request.url}")
+        trace_id = str(uuid.uuid4())
+        logger.warning(f" [TRACE {trace_id}] Validation Error: {exc.errors()} | {request.method} {request.url}")
+
         return JSONResponse(
             status_code=422,
-            content={"detail": exc.errors()},
+            content={"trace_id": trace_id, "detail": exc.errors()},
         )
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Unhandled error: {str(exc)} | {request.method} {request.url}")
+        trace_id = str(uuid.uuid4())
+        logger.error(f" [TRACE {trace_id}] Unhandled Error: {str(exc)} | {request.method} {request.url}")
+
         return JSONResponse(
             status_code=500,
-            content={"detail": "An unexpected error occurred."},
+            content={"trace_id": trace_id, "detail": "An unexpected error occurred."},
         )
 
+
 def register_event_handlers(app: FastAPI):
-    """Handles startup and shutdown events."""
+    """Handles startup and shutdown events for database connections."""
+
     @app.on_event("startup")
     async def startup_db_client():
-        app.mongodb_client = client
-        app.mongodb = app.mongodb_client.get_database(settings.MONGO_DB_NAME)
-        logger.info("MongoDB client started successfully")
+        """ MongoDB Connection on Startup"""
+        try:
+            app.mongodb_client = client
+            app.mongodb = app.mongodb_client.get_database(settings.MONGO_DB_NAME)
+            logger.info(" MongoDB connection established successfully")
+        except Exception as e:
+            logger.error(f" Failed to connect to MongoDB: {str(e)}")
 
     @app.on_event("shutdown")
     async def shutdown_db_client():
-        logger.info("Shutting down MongoDB client...")
+        """ MongoDB Connection on Shutdown"""
+        logger.info("📴 Shutting down MongoDB client...")
         app.mongodb_client.close()
-        logger.info("MongoDB client shutdown complete")
+        logger.info(" MongoDB client shutdown complete")
+
+    @app.middleware("http")
+    async def performance_monitoring_middleware(request: Request, call_next):
+        """Middleware to log API response times."""
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+
+        logger.info(f" {request.method} {request.url} - Processed in {process_time:.3f}s")
+        return response
+
+
 
 app = create_application()
+
 
 @app.get("/", include_in_schema=False)
 async def root():

@@ -2,12 +2,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from tenacity import retry, stop_after_attempt, wait_exponential
-import logging
+from src.commonLib.utils.logger_config import logger
 from src.core.settings.configurations.config import settings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+
 
 # Database URL
 DATABASE_URL = settings.POSTGRES_DB_URL

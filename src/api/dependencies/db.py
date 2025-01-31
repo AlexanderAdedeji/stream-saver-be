@@ -1,7 +1,7 @@
 from typing import Generator
 from src.database.sessions.session import SessionLocal, Session
 from sqlalchemy.exc import SQLAlchemyError
-from loguru import logger
+from src.commonLib.utils.logger_config import logger
 
 
 def get_db() -> Generator[Session, None, None]:

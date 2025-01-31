@@ -2,7 +2,7 @@ import json
 from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse, StreamingResponse
 import requests
-from loguru import logger
+from src.commonLib.utils.logger_config import logger
 import yt_dlp
 import instaloader
 from datetime import datetime

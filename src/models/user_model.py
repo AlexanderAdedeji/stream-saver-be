@@ -1,7 +1,7 @@
 import jwt
 from datetime import datetime, timedelta
 from uuid import uuid4
-from loguru import logger
+from src.commonLib.utils.logger_config import logger
 from sqlalchemy import Integer, Column, Boolean, String, ForeignKey
 from sqlalchemy.orm import relationship, Session
 from commonLib.models.base_class import Base
@@ -26,14 +26,7 @@ class User(Base):
     email = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=False)
     hashed_password = Column(String, nullable=False)
-
-    # user_type_id = Column(String, ForeignKey("user_types.id"))
-    # user_type = relationship("UserType", back_populates="users")
-    # This will link to the `user_id` in CommissionerProfile
     @property
-    # def is_superuser(self):
-    #     return self.user_type.name == SUPERUSER_USER_TYPE
-
     def set_password(self, password: str) -> None:
         self.hashed_password = security.get_password_hash(password)
 

@@ -61,7 +61,7 @@ class LoggerConfig:
                 level="DEBUG",
             )
 
-            # JSON Logging (For Cloud Logging Services like CloudWatch, ELK, Datadog)
+         
             logger.add(
                 self.log_dir / "app.json",
                 serialize=True,
@@ -74,8 +74,7 @@ class LoggerConfig:
         except Exception as e:
             logger.error(f"Failed to configure logger: {e}")
 
-# Initialize the logger
+
 LoggerConfig()
 
-# Expose the logger instance
 logger = logger
