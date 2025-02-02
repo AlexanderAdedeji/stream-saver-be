@@ -266,7 +266,7 @@ if not check_ffmpeg():
 def get_video_info(url: str) -> dict:
     """Fetch YouTube video metadata using yt-dlp."""
     try:
-        ydl_opts = {"quiet": True, "no_warnings": True,  "cookies_from_browser": "chrome",}
+        ydl_opts = {"quiet": True, "no_warnings": True,  "cookies_from_browser": "--cookies-from-browser chrome",}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
     except Exception as e:
