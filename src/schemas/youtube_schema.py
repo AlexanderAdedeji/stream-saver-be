@@ -11,14 +11,14 @@ class VideoFormat(BaseModel):
     """Represents an available format for a YouTube video."""
     format_id: str
     url: HttpUrl
-    ext: Optional[str] = "mp4"  # Default to mp4 if not provided
+    ext: Optional[str] = "mp4"  
     resolution: Optional[str] = None
     filesize: Optional[int] = None  # File size in bytes
     fps: Optional[float] = None  # Frame rate
     width: Optional[int] = None
     height: Optional[int] = None
 
-class VideoMetadata(BaseModel):
+class   YoutubeVideoMetadata(BaseModel):
     """Represents metadata for a YouTube video."""
     id: str
     title: str

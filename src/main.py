@@ -34,7 +34,7 @@ def create_application() -> FastAPI:
     # Apply CORS Middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_ORIGINS.split(","),
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=settings.ALLOWED_METHODS.split(","),
         allow_headers=["*"],
@@ -142,7 +142,7 @@ app.add_exception_handler(429, _rate_limit_exceeded_handler)
 
 
 
-@app.get("/", include_in_schema=False)
+@app.get("/")
 async def root():
     """Redirect to API documentation."""
     return RedirectResponse(url="/docs")

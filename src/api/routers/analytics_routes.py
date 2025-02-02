@@ -6,7 +6,7 @@ from src.models.visits_model import visits_collection
 router = APIRouter()
 
 
-@router.post("/track-visit")
+@router.post("/track_visit")
 async def track_visit(request: Request):
     """Logs frontend visits to the database."""
     client_host = request.client.host 
@@ -17,7 +17,7 @@ async def track_visit(request: Request):
         "ip": client_host,
         "user_agent": user_agent,
         "referrer": referrer,
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.now(),
     }
 
     # Store visit in MongoDB

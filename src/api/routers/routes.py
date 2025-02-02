@@ -34,7 +34,9 @@ for route in api_routes:
     logger.info(f"  Registered route: {route['prefix']} under {route['tag']}")
 
 
-@router.get("/health", dependencies=[Depends(limiter.limit("5/minute"))])
+@router.get("/health", 
+            # dependencies=[Depends(limiter.limit("5/minute"))]
+            )
 async def health_check(request: Request):
     """Health check endpoint with rate limiting."""
     return {"status": "ok"}

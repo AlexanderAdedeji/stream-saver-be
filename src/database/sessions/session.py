@@ -7,6 +7,8 @@ from src.core.settings.configurations.config import settings
 
 
 
+
+
 # Database URL
 DATABASE_URL = settings.POSTGRES_DB_URL
 
