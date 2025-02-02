@@ -148,16 +148,16 @@
 # #         raise HTTPException(status_code=500, detail="Error downloading video.")
 
 
-# def cleanup_downloaded_file(file_path: str):
-#     """Deletes the downloaded video file after serving."""
-#     try:
-#         if os.path.exists(file_path):
-#             os.remove(file_path)
-#             logger.info(f"Deleted downloaded file: {file_path}")
-#         else:
-#             logger.warning(f"Tried to delete file but it does not exist: {file_path}")
-#     except Exception as e:
-#         logger.error(f"Failed to delete file {file_path}: {e}")
+def cleanup_downloaded_file(file_path: str):
+    """Deletes the downloaded video file after serving."""
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Deleted downloaded file: {file_path}")
+        else:
+            logger.warning(f"Tried to delete file but it does not exist: {file_path}")
+    except Exception as e:
+        logger.error(f"Failed to delete file {file_path}: {e}")
 
 
 # @router.post("/video/download",
@@ -266,7 +266,7 @@ if not check_ffmpeg():
 def get_video_info(url: str) -> dict:
     """Fetch YouTube video metadata using yt-dlp."""
     try:
-        ydl_opts = {"quiet": True, "no_warnings": True}
+        ydl_opts = {"quiet": True, "no_warnings": True,  "cookies_from_browser": "chrome",}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
     except Exception as e:
@@ -359,7 +359,9 @@ def download_youtube_video_backend(url: str, quality: str) -> str:
         raise HTTPException(status_code=500, detail="Error downloading video.")
 
 @router.post("/video/download")
-async def download_video(request: Request, url: str = Query(...), quality: str = Query("720")):
+async def download_video(request: Request,
+                        #  background_tasks:BackgroundTask,
+                           url: str = Query(...), quality: str = Query("720")):
     """Download and serve the YouTube video, then delete it after serving."""
     file_path = download_youtube_video_backend(url, quality)
     if not file_path:
