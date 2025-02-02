@@ -250,6 +250,9 @@ router = APIRouter()
 DOWNLOADS_FOLDER = "./downloads"
 os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+COOKIES_PATH = os.path.join(ROOT_DIR, "cookies.txt")
+
 def check_ffmpeg():
     """Check if FFmpeg is installed and accessible."""
     try:
@@ -266,7 +269,7 @@ if not check_ffmpeg():
 def get_video_info(url: str) -> dict:
     """Fetch YouTube video metadata using yt-dlp."""
     try:
-        ydl_opts = {"quiet": True, "no_warnings": True,  "cookies_from_browser": "--cookies-from-browser chrome",}
+        ydl_opts = {"quiet": True, "no_warnings": True, "cookies": COOKIES_PATH, }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
     except Exception as e:
