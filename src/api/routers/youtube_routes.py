@@ -272,7 +272,14 @@ if not check_ffmpeg():
 def get_video_info(url: str) -> dict:
     """Fetch YouTube video metadata using yt-dlp."""
     try:
-        ydl_opts = {"quiet": True, "no_warnings": True, "cookies": COOKIES_PATH, }
+        ydl_opts = {
+    "quiet": True,
+    "no_warnings": True,
+    "cookies": "VISITOR_PRIVACY_METADATA=CgJHQhIEGgAgNg%3D%3D; __Secure-YEC=CgsxakdzM2tNTVdwWSjpnLuvBjIKCgJHQhIEGgAgIg%3D%3D; VISITOR_INFO1_LIVE=edFggaD9YFs; LOGIN_INFO=AFmmF2swRQIhAKYYwEUxKgVXJTVUGyu5pg-yAnXZWVWXkxuv06hCJFmXAiBDMA3LyN6QnciawDax0SCSYnJf2SCt7MR3vm5ykrvioA:QUQ3MjNmeW15dDRjTlQ3WXR5YXZRcmtvV3dfMXg5N0pxcjhfamR6MncyNE05c0Y3al9tdzlabmlvRjFHcm9CYXB2NWxwS19LQ2Q1VGpTNTZjVHctOWV4TkgzUjJuWTVxMVlpTTgybnVUanEzbjVmeDFmQTV1NnJBOVlJbVVPVkNObzRyQm0xRDFkQVdOalNUNjdFWlFpOWk4U2FTTHRfZ3BB; HSID=AqvDHPrHhCECdW_EU; SSID=AAocydzqZgiPVVLSe; APISID=hw0tZpbtrRZnRvej/AWxfXr_JPzCwK-OM1; SAPISID=PnM3AulhRP1doovt/Aa3eUHL0oWZIa04NA; __Secure-1PAPISID=PnM3AulhRP1doovt/Aa3eUHL0oWZIa04NA; __Secure-3PAPISID=PnM3AulhRP1doovt/Aa3eUHL0oWZIa04NA; _gcl_au=1.1.890563992.1736959936; _ga=GA1.1.856651223.1736959936; _ga_VCGEPY40VB=GS1.1.1736959936.1.1.1736959938.58.0.0; NID=520=hcrQZxbFuyuMQFeoIf7QUK8xvYY1i02HfJFK6wjYJM1Mdc3L_K1zniTCZ0Amzy8N9V9AEZWrayWQgeSFUY8ArZT12Kyw6Z7cvGLSu0FP1_Vhj4mq0TjBpfaJHI49dtKDaoXCMWP6WOJEnXnW1FrsirYwrzPfDbeggajSTaSB2by0s3vcaB-IJ6XXpMcmz7B-bkmL1W-1zeNAO4_BK8ECaYUIO7PRTt_p9aLxkLvpsDfPAPZ2NvEXEP50cKSSv15p-Jo0gvS9WgZNft5Oz_M; YSC=u4PFk9wmdvI; SID=g.a000tQjA0V113IdlsErMU-Xb2rZ0pZqV0C1CwwqPtgizMLlqnRVmM1QZyBtSfF1jEoqyELesNgACgYKAXYSARQSFQHGX2Mij_XRQhNBeTFMXWcPys-fERoVAUF8yKoJw9EDVymHspTs0SFKf7zU0076; __Secure-1PSID=g.a000tQjA0V113IdlsErMU-Xb2rZ0pZqV0C1CwwqPtgizMLlqnRVmTn5Wljp3iVupHE5uWNE7eQACgYKARYSARQSFQHGX2MiZPK6JzFCo60vzzx4lr4pnRoVAUF8yKqExNB1Urlk2gQewOGaZLUM0076; __Secure-3PSID=g.a000tQjA0V113IdlsErMU-Xb2rZ0pZqV0C1CwwqPtgizMLlqnRVme9vwQNoNC1NgDBYMtCkbVwACgYKAWYSARQSFQHGX2MiX3S82krppLTHlhEipyZx0hoVAUF8yKqefVil836iTvQ98Atmz5qN0076; __Secure-ROLLOUT_TOKEN=CJyEofPx3tnuNBDutNu6i5GKAxj475b0jbaLAw%3D%3D; PREF=f7=4150&tz=America.Los_Angeles&f5=30000&f4=4000000; __Secure-1PSIDTS=sidts-CjIBEJ3XVyClJ_Fj9CmQYnHheymhXZ3ykK8EpxKnMIHO1a2glD6-Tw35-8V-1zTF-92jFhAA; __Secure-3PSIDTS=sidts-CjIBEJ3XVyClJ_Fj9CmQYnHheymhXZ3ykK8EpxKnMIHO1a2glD6-Tw35-8V-1zTF-92jFhAA; SIDCC=AKEyXzWN0m8k6ixDOiwC5dAv7xJCKR0D7K7vM9nSFPbhsTuTLVIOZxQxkz8pvFARhop4YT-G73U; __Secure-1PSIDCC=AKEyXzXgw70RitQiZVtgcXteM0LSOpg3qdqGEkpFXWJ9bLWcvTmiKhGQyalSw60Fvoxc57bKIa0; __Secure-3PSIDCC=AKEyXzUGmeXg8nf5kWBEEKUig5dfEc-e1AEQwknTwkNZInXXjzxljvl4f5qB0bgn6dYiL06mhUMO",
+    "headers": {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36"
+    }
+}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
     except Exception as e:
