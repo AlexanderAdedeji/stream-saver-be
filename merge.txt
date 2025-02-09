@@ -1,3 +1,29 @@
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\Dockerfile =====
+# Use an official Python image with Debian-based OS
+FROM python:3.10-slim
+
+# Install required dependencies
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
+# Set the working directory
+WORKDIR /app
+
+# Copy and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Expose FastAPI port
+EXPOSE 8000
+
+# Start FastAPI
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\cookies.txt =====
 # Netscape HTTP Cookie File
 # http://curl.haxx.se/rfc/cookie_spec.html
 # This is a generated file!  Do not edit.
@@ -9527,3 +9553,2348 @@ chromewebstore.google.com	FALSE	/	TRUE	1741070549	OTZ	7936242_88_88_104280_84_44
 .google.com	TRUE	/	TRUE	1770014791	__Secure-1PSIDCC	AKEyXzUYRSel9s2d_REPQ6Rrw0_06uhyAq_Qet-_mgyhcA3rZqO47A_zskJoWdxNMFKEnQ39P4Q
 .google.com	TRUE	/	TRUE	1770014791	__Secure-3PSIDCC	AKEyXzWcGCHSr4oiwKL3xdl6zrAoBeRU23INVw-JbK-2w9D23HuV4J3TwtxU4XeiK7l6KOcDRm__
 chatgpt.com	FALSE	/	FALSE	1738479705	_dd_s	rum=0&expire=1738479656428&logs=1&id=d124b53c-91f8-42aa-bcc1-57517f922b86&created=1738478399009
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\__init__.py =====
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\api\dependencies\db.py =====
+from typing import Generator
+from src.database.sessions.session import SessionLocal, Session
+from sqlalchemy.exc import SQLAlchemyError
+from src.commonLib.utils.logger_config import logger
+
+
+def get_db() -> Generator[Session, None, None]:
+    db = SessionLocal()
+    try:
+        yield db
+    except SQLAlchemyError as e:
+        logger.error(f"Database error: {e}")
+        db.rollback()
+        raise
+    finally:
+        db.close()
+        logger.debug("Database session closed.")
+
+
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\api\routers\analytics_routes.py =====
+from fastapi import APIRouter, Request
+from src.commonLib.utils.logger_config import logger
+from datetime import datetime
+from src.models.visits_model import visits_collection
+
+router = APIRouter()
+
+
+@router.post("/track_visit")
+async def track_visit(request: Request):
+    """Logs frontend visits to the database."""
+    client_host = request.client.host 
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    referrer = request.headers.get("Referer", "Direct Visit") 
+
+    visit_data = {
+        "ip": client_host,
+        "user_agent": user_agent,
+        "referrer": referrer,
+        "timestamp": datetime.now(),
+    }
+
+    # Store visit in MongoDB
+    try:
+        visits_collection.insert_one(visit_data)
+        logger.info(f" Visitor logged: {visit_data}")
+        return {"message": "Visit tracked successfully"}
+    except Exception as e:
+        logger.error(f" Error logging visitor: {e}")
+        return {"error": "Failed to log visit"}
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\api\routers\authentication_routes.py =====
+from fastapi import APIRouter
+
+
+
+
+router = APIRouter()
+
+@router.get("/login")
+async def login():
+    return {"message": "Hello World"}
+
+
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\api\routers\facebook_routes.py =====
+from fastapi import FastAPI, HTTPException, Depends, status, Query, APIRouter
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, HttpUrl
+from datetime import datetime
+import re
+import os
+import requests
+from typing import Optional
+
+# from slowapi import Limiter
+# from slowapi.util import get_remote_address
+# from slowapi.errors import RateLimitExceeded
+
+# Initialize FastAPI app
+router = APIRouter()
+
+# # Rate limiting configuration
+# limiter = Limiter(key_func=get_remote_address)
+# router.state.limiter = limiter
+# router.add_exception_handler(RateLimitExceeded, lambda _, exc: JSONResponse(
+#     status_code=429,
+#     content={"detail": "Too many requests"}
+# ))
+
+
+# Configuration
+FACEBOOK_API_VERSION = "v22.0"
+DEFAULT_FIELDS = "id,message,created_time,from,likes.limit(0).summary(true),comments.limit(0).summary(true),attachments,permalink_url,engagement"
+
+
+class FacebookPostRequest(BaseModel):
+    url: str
+    access_token: str = Query(
+        ..., description="Facebook access token with required permissions"
+    )
+    fields: Optional[str] = Query(
+        DEFAULT_FIELDS, description="Graph API fields to return"
+    )
+
+
+class PostAuthor(BaseModel):
+    id: str
+    name: str
+    category: Optional[str]
+
+
+class MediaAttachment(BaseModel):
+    type: str
+    url: Optional[str]
+    title: Optional[str]
+    description: Optional[str]
+
+
+class PostEngagement(BaseModel):
+    reaction_count: int
+    comment_count: int
+    share_count: int
+
+
+class FacebookPostResponse(BaseModel):
+    post_id: str
+    message: Optional[str]
+    created_time: datetime
+    author: PostAuthor
+    attachments: list[MediaAttachment]
+    permalink_url: str
+    engagement: PostEngagement
+
+
+def extract_post_id(url: str) -> str:
+    patterns = [
+        r"(?:https?:\/\/)?(?:www\.|m\.)?facebook\.com\/.*\/(\d+)\/?",
+        r"(?:https?:\/\/)?(?:www\.|m\.)?facebook\.com\/.*\/posts\/(\d+)\/?",
+        r"(?:https?:\/\/)?(?:www\.|m\.)?facebook\.com\/.*\/videos\/(\d+)\/?",
+        r"(?:https?:\/\/)?(?:www\.|m\.)?facebook\.com\/photo\/\?fbid=(\d+)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+
+    raise HTTPException(status_code=400, detail="Invalid Facebook post URL format")
+
+
+@router.post("/api/facebook/metadata", response_model=FacebookPostResponse)
+async def get_facebook_post_metadata(
+    request: FacebookPostRequest):
+    """
+    Retrieve metadata for a Facebook post using its URL
+
+    Required permissions:
+    - For public Page posts: pages_manage_posts
+    - For user posts: user_posts
+    """
+    try:
+        # Extract post ID from URL
+        post_id = extract_post_id(request.url)
+
+        # Build Graph API URL
+        api_url = f"https://graph.facebook.com/{FACEBOOK_API_VERSION}/{post_id}"
+
+        params = {"access_token": request.access_token, "fields": request.fields}
+
+        # Make API request
+        response = requests.get(api_url, params=params, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+
+        # Transform response
+        return {
+            "post_id": data["id"],
+            "message": data.get("message"),
+            "created_time": datetime.fromisoformat(data["created_time"]),
+            "author": {
+                "id": data["from"]["id"],
+                "name": data["from"]["name"],
+                "category": data["from"].get("category"),
+            },
+            "attachments": [
+                {
+                    "type": attachment["type"],
+                    "url": attachment.get("url"),
+                    "title": attachment.get("title"),
+                    "description": attachment.get("description"),
+                }
+                for attachment in data.get("attachments", {}).get("data", [])
+            ],
+            "permalink_url": data["permalink_url"],
+            "engagement": {
+                "reaction_count": data["engagement"]["reaction_count"],
+                "comment_count": data["engagement"]["comment_count"],
+                "share_count": data["engagement"]["share_count"],
+            },
+        }
+
+    except requests.HTTPError as e:
+        error_data = e.response.json()
+        detail = f"Facebook API error: {error_data.get('error', {}).get('message', 'Unknown error')}"
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+
+    except KeyError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Missing expected data in Facebook API response: {str(e)}",
+        )
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\api\routers\instagram_routes.py =====
+import json
+from fastapi import FastAPI, APIRouter, HTTPException, Query
+from fastapi.responses import RedirectResponse, StreamingResponse
+import requests
+from src.commonLib.utils.logger_config import logger
+import yt_dlp
+import instaloader
+from datetime import datetime
+from typing import List, Optional
+from pydantic import HttpUrl
+from src.schemas.instagram_schema import InstagramPostResponse
+
+# Initialize FastAPI app and router
+app = FastAPI()
+router = APIRouter()
+
+import instaloader
+import os
+from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Path to the session file
+SESSION_FILE = "instagram_session"
+
+# Set up proxy (change this to your proxy details)
+PROXY = "http://your-proxy-ip:port"
+
+def login_instaloader() -> instaloader.Instaloader:
+    """Initialize Instaloader with session cookies and proxy."""
+    L = instaloader.Instaloader()
+
+    # Set proxy if available
+    if PROXY:
+        L.context.proxy = PROXY
+
+    # Load saved session if available
+    if os.path.exists(SESSION_FILE):
+        try:
+            L.load_session_from_file("your_instagram_username", SESSION_FILE)
+            logger.info("Loaded Instagram session successfully.")
+        except Exception as e:
+            logger.error(f"Error loading session: {e}")
+            raise
+    else:
+        logger.error("No saved session found. Please log in first.")
+        raise FileNotFoundError("Instagram session not found. Run login first.")
+
+    return L
+
+
+def get_owner_details(post: instaloader.Post) -> dict:
+    """Extract owner details from the post's node."""
+    try:
+        owner_data = post._node["owner"]
+        return {
+            "id": owner_data.get("id"),
+            "username": owner_data.get("username"),
+            "full_name": owner_data.get("full_name"),
+            "profile_pic_url": owner_data.get("profile_pic_url"),
+            "is_verified": owner_data.get("is_verified", False),
+        }
+    except KeyError as e:
+        logger.error(f"Owner details not found: {e}")
+        return {
+            "id": None,
+            "username": None,
+            "full_name": None,
+            "profile_pic_url": None,
+            "is_verified": False,
+        }
+
+
+def extract_shortcode(url: str) -> str:
+    """Extract shortcode from Instagram URL"""
+    url = url.strip("/")
+    for pattern in ["/reel/", "/p/", "/tv/"]:
+        if pattern in url:
+            return url.split(pattern)[-1].split("/")[0]
+    return url.split("/")[-1]
+
+
+def get_instagram_post(url: str) -> Optional[instaloader.Post]:
+    """Fetch Instagram post using instaloader"""
+    try:
+        L = instaloader.Instaloader()
+        shortcode = extract_shortcode(url)
+        return instaloader.Post.from_shortcode(L.context, shortcode)
+    except Exception as e:
+        logger.error(f"Error fetching Instagram post: {e}")
+        return None
+
+
+def classify_post(post: instaloader.Post) -> str:
+    """Determine post type"""
+    if post.typename == "GraphReel":
+        return "reel"
+    if post.mediacount > 1:
+        return "carousel"
+    return "video" if post.is_video else "image"
+
+def process_media(post: instaloader.Post) -> List[dict]:
+    """Process media for all post types (single post, video, carousel)."""
+    media = []
+    
+    if post._node.get("edge_sidecar_to_children"):  # Carousel posts
+        for index, child in enumerate(post._node.get("edge_sidecar_to_children").get("edges", [])):
+            node = child.get("node", {})
+            media_type = "video" if node.get("is_video") else "image"
+            media_url = node.get("video_url") if node.get("is_video") else node.get("display_resources")[-1].get("src")
+            
+            if not media_url:
+                logger.error(f"Missing media URL for index {index}")
+                continue  # Skip any media that lacks a URL
+            
+            media.append({
+                "url": media_url,
+                "index": index,
+                "type": media_type  # Ensure "type" key is always included
+            })
+
+    else:  # Single image or video post
+        media_type = "video" if post._node.get("is_video") else "image"
+        media_url = post._node.get("video_url") if post._node.get("is_video") else post._node.get("display_url")
+
+        if not media_url:
+            logger.error("Missing media URL for single post")
+            raise HTTPException(status_code=500, detail="Failed to extract media URL")
+
+        media.append({
+            "index": 0,
+            "url": media_url,
+            "type": media_type  # Ensure "type" key is included
+        })
+
+    logger.info(f"Processed media: {json.dumps(media, indent=2)}")  # Log output for debugging
+    return media
+
+
+
+
+def get_music_info(post: instaloader.Post) -> Optional[str]:
+    """Extract music information for Reels"""
+    try:
+        if post.typename == "GraphReel" and post.music:
+            return f"{post.music.title} - {post.music.artist}"
+    except AttributeError:
+        pass
+    return None
+
+
+@router.get("/metadata")
+async def instagram_metadata(url: str):
+    """Fetch Instagram post metadata"""
+    try:
+        if "instagram.com" not in url:
+            raise HTTPException(status_code=400, detail="Invalid Instagram URL")
+
+        # Fetch post data
+        post = get_instagram_post(url)
+
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found or private")
+
+        # Extract owner details
+        owner_details = get_owner_details(post)
+
+        # Prepare response data
+        response_data = {
+            "id": post._node["id"],
+            "shortcode": post._node["shortcode"],
+            "type": classify_post(post),
+            "caption": post._node.get("edge_media_to_caption", {})
+            .get("edges", [{}])[0]
+            .get("node", {})
+            .get("text"),
+            "timestamp": datetime.fromtimestamp(post._node["taken_at_timestamp"]),
+            "like_count": post._node.get("edge_media_preview_like", {}).get("count"),
+            "view_count": (
+                post._node.get("video_view_count")
+                if post._node.get("is_video")
+                else None
+            ),
+            "media": process_media(post),
+            "username": owner_details["username"],
+            "user_avatar": owner_details["profile_pic_url"],
+            "music": get_music_info(post),
+            "is_sponsored": post._node.get("is_ad", False),
+        }
+
+        return response_data
+
+        # return InstagramPostResponse(**response_data)
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error fetching Instagram metadata: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process Instagram post")
+
+
+
+
+
+@router.get("/download")
+async def download_instagram_media(
+    url: str = Query(..., description="Instagram post URL"),
+    media_index: int = Query(0, description="Index of media in carousel"),
+):
+    """Download Instagram media with correct file extension."""
+    try:
+        post = get_instagram_post(url)
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        media = process_media(post)
+
+        if media_index >= len(media):
+            raise HTTPException(
+                status_code=400, detail=f"Invalid media index {media_index}, only {len(media)} items available."
+            )
+
+        media_url = media[media_index]["url"]
+        media_type = media[media_index]["type"]
+
+        if not media_url:
+            raise HTTPException(status_code=500, detail="Failed to retrieve media URL")
+
+        # Get file extension based on media type
+        file_extension = "mp4" if media_type == "video" else "jpg"
+
+        # Fetch the media
+        response = requests.get(media_url, stream=True)
+        content_type = response.headers.get("Content-Type", "application/octet-stream")
+
+        return StreamingResponse(
+            response.iter_content(chunk_size=1024 * 1024),
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="instagram_media_{media_index}.{file_extension}"'
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing Instagram download: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process download")
+
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\api\routers\routes.py =====
+from fastapi import APIRouter, Depends, Request
+from slowapi.util import get_remote_address
+from src.commonLib.utils.logger_config import logger
+from src.api.routers import (
+    analytics_routes,
+    authentication_routes,
+    facebook_routes,
+    youtube_routes,
+    user_routes,
+    instagram_routes,
+)
+from src.limiter import limiter 
+
+router = APIRouter()
+
+# List of all routers for dynamic inclusion
+api_routes = [
+    {"router": authentication_routes.router, "prefix": "/auth", "tag": "Authentication"},
+    {"router": youtube_routes.router, "prefix": "/youtube", "tag": "YouTube"},
+    {"router": instagram_routes.router, "prefix": "/instagram", "tag": "Instagram"},
+    {"router": user_routes.user_router, "prefix": "/users", "tag": "Users"},
+    {"router": facebook_routes.router, "prefix": "/facebook", "tag": "Facebook"},
+        {"router": analytics_routes.router, "prefix": "/analytics", "tag": "Analytics"}
+]
+
+
+for route in api_routes:
+    router.include_router(
+        route["router"],
+        prefix=route["prefix"],
+        tags=[route["tag"]],
+        responses={404: {"description": "Not found"}},
+    )
+    logger.info(f"  Registered route: {route['prefix']} under {route['tag']}")
+
+
+@router.get("/health", 
+            # dependencies=[Depends(limiter.limit("5/minute"))]
+            )
+async def health_check(request: Request):
+    """Health check endpoint with rate limiting."""
+    return {"status": "ok"}
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\api\routers\user_routes.py =====
+from fastapi import APIRouter
+
+
+
+user_router = APIRouter()
+
+@user_router.get("/users")
+async def get_users():
+    return {"message": "Hello World"}
+
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\api\routers\youtube_routes.py =====
+# from fastapi import APIRouter, HTTPException, Query, Depends, Request
+# from fastapi.responses import FileResponse
+# from src.limiter import limiter
+# import yt_dlp
+# import os
+# from datetime import datetime
+# from typing import Optional, List
+# from loguru import logger
+# from src.schemas.youtube_schema import YoutubeVideoMetadata, VideoThumbnail, VideoFormat
+
+
+# #  Initialize FastAPI Router
+# router = APIRouter()
+
+
+# #  Create Downloads Directory if Not Exists
+# DOWNLOADS_FOLDER = "./downloads"
+# os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
+
+
+# def get_video_info(url: str) -> dict:
+#     """Fetch YouTube video metadata using yt-dlp."""
+#     try:
+#         ydl_opts = {"quiet": True, "no_warnings": True}
+#         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+#             return ydl.extract_info(url, download=False)
+#     except Exception as e:
+#         logger.error(f"Failed to fetch video info: {e}")
+#         raise HTTPException(status_code=500, detail="Failed to fetch video metadata.")
+
+
+# def format_video_metadata(raw_info: dict) -> YoutubeVideoMetadata:
+#     """Formats and structures the YouTube video metadata to match the schema."""
+#     try:
+#         # Convert Thumbnails
+#         thumbnails = [
+#             VideoThumbnail(
+#                 url=thumb.get("url"),
+#                 width=thumb.get("width"),
+#                 height=thumb.get("height"),
+#             )
+#             for thumb in raw_info.get("thumbnails", [])
+#         ]
+
+#         # Extract Available Video Qualities
+#         video_qualities = []
+#         seen_qualities = set()
+
+#         for fmt in raw_info.get("formats", []):
+#             if fmt.get("height") and fmt.get("vcodec") != "none":  # Ensure it's a video format
+#                 quality = f"{fmt['height']}p"
+                
+#                 if quality not in seen_qualities:
+#                     seen_qualities.add(quality)
+
+#                     video_qualities.append(VideoFormat(
+#                         format_id=fmt.get("format_id", ""),
+#                         url=fmt.get("url", ""),
+#                         ext=fmt.get("ext", "mp4"),
+#                         resolution=quality,
+#                         filesize=fmt.get("filesize"),  # File size in bytes
+#                         fps=fmt.get("fps"),
+#                         width=fmt.get("width"),
+#                         height=fmt.get("height"),
+#                     ))
+
+#         # Sort resolutions from highest to lowest (e.g., 1080p -> 720p -> 480p)
+#         video_qualities.sort(key=lambda x: int(x.resolution[:-1]), reverse=True)
+
+#         # Format Metadata According to Schema
+#         metadata = YoutubeVideoMetadata(
+#             id=raw_info.get("id", ""),
+#             title=raw_info.get("title", "Unknown Title"),
+#             description=raw_info.get("description", ""),
+#             upload_date=datetime.strptime(
+#                 raw_info.get("upload_date", "19700101"), "%Y%m%d"
+#             ).strftime("%Y-%m-%d"),
+#             duration=raw_info.get("duration", 0),
+#             view_count=raw_info.get("view_count", 0),
+#             like_count=raw_info.get("like_count"),
+#             thumbnail=raw_info.get("thumbnail"),
+#             thumbnails=thumbnails,
+#             formats=video_qualities,
+#         )
+
+#         return metadata
+
+#     except Exception as e:
+#         logger.error(f"Error formatting metadata: {e}")
+#         raise HTTPException(status_code=500, detail="Error formatting video metadata.")
+
+
+# @router.get("/video/metadata", 
+            
+#             # dependencies=[Depends(limiter.limit("10/minute"))]
+            
+#             )
+# async def youtube_metadata(url: str) -> YoutubeVideoMetadata:
+#     """Fetch and return YouTube video metadata in the correct schema format."""
+#     raw_info = get_video_info(url)
+#     # return raw_info
+#     if not raw_info:
+#         raise HTTPException(status_code=404, detail="Video not found")
+
+#     formatted_metadata = format_video_metadata(raw_info)
+#     return formatted_metadata
+
+
+
+# # def download_youtube_video_backend(url: str, quality: str) -> str:
+# #     """Download YouTube video with fallback to highest available quality."""
+# #     ydl_opts = {
+# #         "outtmpl": f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s",
+# #         "merge_output_format": "mp4",
+# #     }
+
+# #     try:
+# #         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+# #             info_dict = ydl.extract_info(url, download=False)
+
+# #             available_formats = sorted(
+# #                 [
+# #                     (f["format_id"], f["height"])
+# #                     for f in info_dict["formats"]
+# #                     if f.get("height") and f.get("acodec") != "none"
+# #                 ],
+# #                 key=lambda x: x[1],
+# #                 reverse=True,
+# #             )
+
+# #             if not available_formats:
+# #                 raise HTTPException(status_code=404, detail="No suitable video formats available")
+
+# #             matching_format = next((f for f in available_formats if f[1] == int(quality)), None)
+
+# #             if not matching_format:
+# #                 matching_format = available_formats[0]
+# #                 logger.warning(f"Requested quality {quality}p not available. Falling back to {matching_format[1]}p.")
+
+# #             ydl_opts["format"] = matching_format[0]
+# #             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+# #                 ydl.download([url])
+
+# #             return ydl.prepare_filename(info_dict)
+
+# #     except Exception as e:
+# #         logger.error(f"Error downloading video: {e}")
+# #         raise HTTPException(status_code=500, detail="Error downloading video.")
+
+
+def cleanup_downloaded_file(file_path: str):
+    """Deletes the downloaded video file after serving."""
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Deleted downloaded file: {file_path}")
+        else:
+            logger.warning(f"Tried to delete file but it does not exist: {file_path}")
+    except Exception as e:
+        logger.error(f"Failed to delete file {file_path}: {e}")
+
+
+# @router.post("/video/download",
+#             #   dependencies=[Depends(limiter.limit("10/minute"))]
+#               )
+# async def download_video(request: Request, url: str = Query(...), quality: str = Query("720")):
+#     """Download and serve the YouTube video, then delete it from the server."""
+#     file_path = download_youtube_video_backend(url, quality)
+
+#     if not file_path:
+#         raise HTTPException(status_code=404, detail="Video not found or failed to download.")
+
+#     response = FileResponse(file_path, media_type="video/mp4", filename=os.path.basename(file_path))
+
+#     #  Schedule cleanup after response
+#     request.app.add_event_handler("shutdown", lambda: cleanup_downloaded_file(file_path))
+
+#     return response
+
+
+
+
+
+
+
+# def download_youtube_video_backend(url: str, quality: str) -> str:
+#     """Download YouTube video with fallback to the closest available quality."""
+#     ydl_opts = {
+#         "outtmpl": f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s",
+#         "merge_output_format": "mp4",
+#     }
+
+#     try:
+#         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+#             info_dict = ydl.extract_info(url, download=False)
+
+#             # Extract available formats with video
+#             available_formats = sorted(
+#                 [
+#                     (f["format_id"], f["height"])
+#                     for f in info_dict["formats"]
+#                     if f.get("height") and f.get("vcodec") != "none"
+#                 ],
+#                 key=lambda x: x[1],  # Sort by height (resolution)
+#                 reverse=True,  # Higher resolution first
+#             )
+
+#             if not available_formats:
+#                 raise HTTPException(status_code=404, detail="No suitable video formats available.")
+
+#             # Convert quality string (e.g., "720p") to integer for comparison
+#             requested_height = int(quality.replace("p", ""))
+
+#             # Find the exact quality match
+#             matching_format = next((f for f in available_formats if f[1] == requested_height), None)
+
+#             # If no exact match, find the closest available resolution
+#             if not matching_format:
+#                 closest_format = min(available_formats, key=lambda x: abs(x[1] - requested_height))
+#                 logger.warning(f"Requested quality {quality} not available. Using {closest_format[1]}p instead.")
+#                 matching_format = closest_format
+
+#             # Set the chosen format
+#             ydl_opts["format"] = matching_format[0]
+
+#             # Download video
+#             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+#                 ydl.download([url])
+
+#             return ydl.prepare_filename(info_dict)
+
+#     except Exception as e:
+#         logger.error(f"Error downloading video: {e}")
+#         raise HTTPException(status_code=500, detail="Error downloading video.")
+
+
+
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse
+import yt_dlp
+import os
+import subprocess
+from datetime import datetime
+from typing import Optional, List
+from loguru import logger
+from src.schemas.youtube_schema import YoutubeVideoMetadata, VideoThumbnail, VideoFormat
+
+router = APIRouter()
+
+DOWNLOADS_FOLDER = "./downloads"
+os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+COOKIES_PATH = os.path.join(ROOT_DIR, "cookies.txt")
+
+def check_ffmpeg():
+    """Check if FFmpeg is installed and accessible."""
+    try:
+        result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True)
+        logger.info(f"FFmpeg Version: {result.stdout.splitlines()[0]}")
+        return True
+    except Exception as e:
+        logger.error("FFmpeg is not installed. Install FFmpeg to process videos.")
+        return False
+
+if not check_ffmpeg():
+    raise RuntimeError("FFmpeg is required but not found. Please install it.")
+
+def get_video_info(url: str) -> dict:
+    """Fetch YouTube video metadata using yt-dlp."""
+    try:
+        ydl_opts = {"quiet": True, "no_warnings": True, "cookies": COOKIES_PATH, }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(url, download=False)
+    except Exception as e:
+        logger.error(f"Failed to fetch video info: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch video metadata.")
+
+def format_video_metadata(raw_info: dict) -> YoutubeVideoMetadata:
+    """Format YouTube metadata into a structured schema."""
+    thumbnails = [
+        VideoThumbnail(
+            url=thumb.get("url"),
+            width=thumb.get("width"),
+            height=thumb.get("height"),
+        )
+        for thumb in raw_info.get("thumbnails", [])
+    ]
+    video_qualities = []
+    seen_qualities = set()
+    for fmt in raw_info.get("formats", []):
+        if fmt.get("height") and fmt.get("vcodec") != "none":
+            quality = f"{fmt['height']}p"
+            if quality not in seen_qualities:
+                seen_qualities.add(quality)
+                video_qualities.append(VideoFormat(
+                    format_id=fmt.get("format_id", ""),
+                    url=fmt.get("url", ""),
+                    ext=fmt.get("ext", "mp4"),
+                    resolution=quality,
+                    filesize=fmt.get("filesize"),
+                    fps=fmt.get("fps"),
+                    width=fmt.get("width"),
+                    height=fmt.get("height"),
+                ))
+    video_qualities.sort(key=lambda x: int(x.resolution[:-1]), reverse=True)
+    return YoutubeVideoMetadata(
+        id=raw_info.get("id", ""),
+        title=raw_info.get("title", "Unknown Title"),
+        description=raw_info.get("description", ""),
+        upload_date=datetime.strptime(raw_info.get("upload_date", "19700101"), "%Y%m%d").strftime("%Y-%m-%d"),
+        duration=raw_info.get("duration", 0),
+        view_count=raw_info.get("view_count", 0),
+        like_count=raw_info.get("like_count"),
+        thumbnail=raw_info.get("thumbnail"),
+        thumbnails=thumbnails,
+        formats=video_qualities,
+    )
+
+@router.get("/video/metadata")
+async def youtube_metadata(url: str) -> YoutubeVideoMetadata:
+    """Fetch and return YouTube video metadata."""
+    raw_info = get_video_info(url)
+    return format_video_metadata(raw_info)
+
+def download_youtube_video_backend(url: str, quality: str) -> str:
+    """
+    Download YouTube video with yt-dlp automatically merging video & audio.
+    The final file will be named after the video title.
+    """
+    # First, get video metadata to determine the title.
+    info = get_video_info(url)
+    title = info.get("title", "video")
+    # It is advisable to sanitize the title if needed (yt-dlp with restrict_filenames can help)
+    final_output = f"{title}.mp4"
+    output_path = os.path.join(DOWNLOADS_FOLDER, final_output)
+
+    ydl_opts = {
+        "format": f"bv*[height={quality}]+ba/b",
+        "paths": {"home": DOWNLOADS_FOLDER},
+        # Use the title-based template so the merged file is named after the video title.
+        "outtmpl": os.path.join("%(title)s.%(ext)s"),
+        "merge_output_format": "mp4",
+        "postprocessors": [
+            {
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4",
+            }
+        ],
+        # Optionally, restrict filenames to ASCII-compatible characters:
+        "restrict_filenames": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        if os.path.exists(output_path):
+            return output_path
+        else:
+            raise HTTPException(status_code=404, detail="Video download failed.")
+    except Exception as e:
+        logger.error(f"Error downloading video: {e}")
+        raise HTTPException(status_code=500, detail="Error downloading video.")
+
+@router.post("/video/download")
+async def download_video(request: Request,
+                        #  background_tasks:BackgroundTask,
+                           url: str = Query(...), quality: str = Query("720")):
+    """Download and serve the YouTube video, then delete it after serving."""
+    file_path = download_youtube_video_backend(url, quality)
+    if not file_path:
+        raise HTTPException(status_code=404, detail="Video not found or failed to download.")
+
+    response = FileResponse(file_path, media_type="video/mp4", filename=os.path.basename(file_path))
+    request.app.add_event_handler("shutdown", lambda: os.remove(file_path))
+    return response
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\commonLib\__init__.py =====
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\commonLib\models\base_class.py =====
+from typing import Any, Dict
+from datetime import datetime
+from sqlalchemy.ext.declarative import as_declarative, declared_attr
+from sqlalchemy import Column, DateTime, Integer
+from fastapi.encoders import jsonable_encoder
+
+@as_declarative()
+class Base:
+    id: Any
+    __name__: str
+
+    @declared_attr
+    def __tablename__(cls) -> str:
+        return cls.__name__.lower()
+
+    def to_json(self) -> Dict[str, Any]:
+        return jsonable_encoder(self)
+
+class TimestampMixin:
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
+
+# Example model using the Base and TimestampMixin
+class MyModel(TimestampMixin, Base):
+    id = Column(Integer, primary_key=True, index=True)
+    # Add other model-specific fields here
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\commonLib\models\mongo_base_class.py =====
+from typing import Any, Dict, Optional
+from pydantic import BaseModel, Field
+from datetime import datetime
+from bson import ObjectId
+
+class PyObjectId(ObjectId):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if not ObjectId.is_valid(v):
+            raise ValueError("Invalid ObjectId")
+        return ObjectId(v)
+
+class MongoBase(BaseModel):
+    id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Document creation timestamp")
+    updated_at: Optional[datetime] = Field(default=None, description="Document update timestamp")
+
+    @classmethod
+    def __collectionname__(cls) -> str:
+        return cls.__name__.lower()
+
+    class Config:
+        allow_population_by_field_name = True
+        json_encoders = {ObjectId: str}
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\commonLib\repositories\nosql_repository.py =====
+from datetime import datetime
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
+
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
+from pydantic import BaseModel, Field, ValidationError, validator
+from src.commonLib.models.mongo_base_class import PyObjectId
+
+# Define a Pydantic model for ObjectId validation
+# # Base Pydantic model for MongoDB documents
+class MongoBaseModel(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id")
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        allow_population_by_field_name = True
+        json_encoders = {ObjectId: str}
+
+ModelType = TypeVar("ModelType", bound=MongoBaseModel)
+
+class BaseMongo(Generic[ModelType]):
+    def __init__(self, db: AsyncIOMotorDatabase, model: Type[ModelType]):
+        self.model = model
+        self.collection: AsyncIOMotorCollection = db[model.__collectionname__()]
+
+    async def get(self, object_id: str) -> Optional[ModelType]:
+        try:
+            obj_id = PyObjectId.validate(object_id)
+            document = await self.collection.find_one({"_id": obj_id})
+            if document:
+                return self.model(**document)
+        except (ValidationError, Exception) as e:
+            # Log the error
+            print(f"Error in get: {e}")
+        return None
+
+    async def get_multiple(
+        self, conditions: Dict[str, Any] = {}, skip: int = 0, limit: int = 100
+    ) -> List[ModelType]:
+        documents = (
+            self.collection.find(conditions).skip(skip).limit(limit)
+        )
+        return [self.model(**doc) async for doc in documents]
+
+    async def create(self, obj_in: BaseModel) -> Optional[ModelType]:
+        try:
+            obj_in_dict = obj_in.dict(by_alias=True)
+            obj_in_dict["created_at"] = datetime.utcnow()
+            obj_in_dict["updated_at"] = datetime.utcnow()
+            result = await self.collection.insert_one(obj_in_dict)
+            return await self.get(str(result.inserted_id))
+        except Exception as e:
+            # Log the error
+            print(f"Error in create: {e}")
+        return None
+
+    async def update(
+        self, object_id: str, obj_in: Union[BaseModel, Dict[str, Any]]
+    ) -> Optional[ModelType]:
+        try:
+            obj_id = PyObjectId.validate(object_id)
+            if isinstance(obj_in, dict):
+                update_data = {"$set": obj_in}
+            else:
+                update_data = {"$set": obj_in.dict(exclude_unset=True)}
+            update_data["$set"]["updated_at"] = datetime.utcnow()
+            await self.collection.update_one({"_id": obj_id}, update_data)
+            return await self.get(object_id)
+        except (ValidationError, Exception) as e:
+            # Log the error
+            print(f"Error in update: {e}")
+        return None
+
+    async def delete(self, object_id: str) -> bool:
+        try:
+            obj_id = PyObjectId.validate(object_id)
+            result = await self.collection.delete_one({"_id": obj_id})
+            return result.deleted_count > 0
+        except (ValidationError, Exception) as e:
+            # Log the error
+            print(f"Error in delete: {e}")
+        return False
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\commonLib\repositories\relational_repository.py =====
+from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from commonLib.models.base_class import Base as BaseDeclarativeClass
+
+ModelType = TypeVar("ModelType", bound=BaseDeclarativeClass)
+CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
+UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
+
+class BaseRepository(Generic[ModelType]):
+    def __init__(self, model: Type[ModelType]) -> None:
+        self.model = model
+
+    def get(self, db: Session, id: Any) -> Optional[ModelType]:
+        return db.query(self.model).filter(self.model.id == id).first()
+
+    def exists(self, db: Session, id: Any) -> bool:
+        return db.query(self.model).filter(self.model.id == id).first() is not None
+
+    def get_multi(
+        self, db: Session, *, skip: int = 0, limit: int = 100
+    ) -> List[ModelType]:
+        return db.query(self.model).offset(skip).limit(limit).all()
+
+    def get_multi_by_ids(self, db: Session, *, ids: List[Any]) -> List[ModelType]:
+        return db.query(self.model).filter(self.model.id.in_(ids)).all()
+
+    def get_all(self, db: Session) -> List[ModelType]:
+        return db.query(self.model).all()
+
+    def get_count(self, db: Session) -> int:
+        return db.query(self.model).count()
+
+    def create(self, db: Session, *, obj_in: CreateSchemaType) -> ModelType:
+        obj_in_data = jsonable_encoder(obj_in)
+        db_obj = self.model(**obj_in_data)
+        try:
+            db.add(db_obj)
+            db.commit()
+            db.refresh(db_obj)
+            return db_obj
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Data integrity issue.",
+            )
+        except SQLAlchemyError as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e),
+            )
+
+    def get_by_field(
+        self, db: Session, *, field_name: str, field_value: Any
+    ) -> Optional[ModelType]:
+        return db.query(self.model).filter(getattr(self.model, field_name) == field_value).first()
+
+    def update(
+        self,
+        db: Session,
+        *,
+        db_obj: ModelType,
+        obj_in: Union[UpdateSchemaType, Dict[str, Any]]
+    ) -> ModelType:
+        obj_data = jsonable_encoder(db_obj)
+        update_data = obj_in if isinstance(obj_in, dict) else obj_in.dict(exclude_unset=True)
+        for field in obj_data:
+            if field in update_data:
+                setattr(db_obj, field, update_data[field])
+        try:
+            db.add(db_obj)
+            db.commit()
+            db.refresh(db_obj)
+            return db_obj
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Data integrity issue.",
+            )
+        except SQLAlchemyError as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e),
+            )
+
+    def remove(self, db: Session, *, id: Any) -> ModelType:
+        obj = db.query(self.model).get(id)
+        if not obj:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Item not found.",
+            )
+        try:
+            db.delete(obj)
+            db.commit()
+            return obj
+        except SQLAlchemyError as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e),
+            )
+
+    def get_paginated(
+        self, db: Session, *, skip: int = 0, limit: int = 10
+    ) -> List[ModelType]:
+        return db.query(self.model).offset(skip).limit(limit).all()
+
+    def get_paginated_with_filter(
+        self,
+        db: Session,
+        *,
+        filter_conditions: Dict[str, Any],
+        skip: int = 0,
+        limit: int = 10
+    ) -> List[ModelType]:
+        query = db.query(self.model)
+        for field, value in filter_conditions.items():
+            query = query.filter(getattr(self.model, field) == value)
+        return query.offset(skip).limit(limit).all()
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\commonLib\response\response_schema.py =====
+from pydantic import BaseModel
+from typing import Optional, Dict, Any, TypeVar, Generic
+
+T = TypeVar("T")
+
+class APIResponse(BaseModel, Generic[T]):
+    status_code: int
+    message: str
+    data: Optional[T] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+def create_response(
+    message: str = "",
+    status_code: int = 200,
+    data: Optional[T] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> APIResponse[T]:
+    return APIResponse[T](message=message, status_code=status_code, data=data, metadata=metadata)
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\commonLib\utils\logger_config.py =====
+from typing import Optional
+from loguru import logger
+import sys
+from pathlib import Path
+import os
+
+class LoggerConfig:
+    def __init__(self, log_dir: Optional[str] = None, log_file: str = "app.log"):
+        self.project_root = Path(__file__).resolve().parent.parent.parent
+        self.log_dir = Path(log_dir) if log_dir else self.project_root / "logs"
+        self.log_file_path = self.log_dir / log_file
+
+        # Ensure log directory exists
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        self._configure_logger()
+
+    def _configure_logger(self):
+        try:
+            logger.remove()  # Remove default handlers
+            
+            # Console Logging (for real-time debugging)
+            logger.add(
+                sys.stdout,
+                format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+                       "<level>{level: <8}</level> | "
+                       "<cyan>{process}</cyan>:<cyan>{thread}</cyan> | "
+                       "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+                       "<level>{message}</level>",
+                level=os.getenv("LOG_LEVEL", "INFO"),
+                colorize=True,
+            )
+
+            # General Application Logs
+            logger.add(
+                self.log_file_path,
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {process}:{thread} | {name}:{function}:{line} - {message}",
+                rotation=os.getenv("LOG_ROTATION", "10 MB"),
+                retention=os.getenv("LOG_RETENTION", "10 days"),
+                compression=os.getenv("LOG_COMPRESSION", "zip"),
+                level=os.getenv("LOG_FILE_LEVEL", "INFO"),
+            )
+
+            # Error Logs
+            logger.add(
+                self.log_dir / "error.log",
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} - {message}",
+                rotation="5 MB",
+                retention="7 days",
+                compression="zip",
+                level="ERROR",
+            )
+
+            # Debug Logs
+            logger.add(
+                self.log_dir / "debug.log",
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} - {message}",
+                rotation="5 MB",
+                retention="7 days",
+                compression="zip",
+                level="DEBUG",
+            )
+
+         
+            logger.add(
+                self.log_dir / "app.json",
+                serialize=True,
+                rotation="10 MB",
+                retention="30 days",
+                compression="zip",
+                level="INFO",
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to configure logger: {e}")
+
+
+LoggerConfig()
+
+logger = logger
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\commonLib\utils\utils.py =====
+
+import re
+
+class Utils:
+    @staticmethod
+    def seconds_to_hms(seconds: int) -> str:
+        """Convert seconds to HH:MM:SS format.
+        
+        Args:
+            seconds: Duration in seconds (non-negative integer)
+            
+        Returns:
+            str: Time formatted as HH:MM:SS
+            
+        Raises:
+            ValueError: If input is negative
+        """
+        if seconds < 0:
+            raise ValueError(f"Negative seconds not allowed: {seconds}")
+            
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
+    @staticmethod
+    def sanitize_filename(filename: str) -> str:
+        return re.sub(r'[\\/*?:"<>|]', "", filename).strip()
+    
+
+utils = Utils()
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\core\__init__.py =====
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\core\errors\errors.py =====
+from typing import Final
+
+# Authentication & Authorization Errors
+INCORRECT_LOGIN_INPUT: Final[str] = "Incorrect email or password"
+UNVERIFIED_USER_ERROR: Final[str] = "This account is not verified"
+INACTIVE_USER_ERROR: Final[str] = "This account is not active"
+WRONG_TOKEN_PREFIX: Final[str] = "Unsupported authorization type"
+UNAUTHORIZED_ACTION: Final[str] = "You cannot perform this action"
+AUTHENTICATION_REQUIRED: Final[str] = "Authentication required"
+MALFORMED_PAYLOAD: Final[str] = "Could not validate credentials"
+
+# General Errors
+ALREADY_EXISTS: Final[str] = "{} already exists"
+NOT_FOUND: Final[str] = "Not found"
+SERVER_ERROR: Final[str] = "An error occurred"
+DOES_NOT_EXIST: Final[str] = "{} does not exist"
+DEVICE_ID_REQUIRED_ERROR:Final[str] ="Device ID is required for commissioners."
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\core\errors\exceptions.py =====
+from typing import Optional, Any
+from src.core.errors import error_strings
+from fastapi import HTTPException
+from starlette.status import (
+    HTTP_400_BAD_REQUEST,
+    HTTP_401_UNAUTHORIZED,
+    HTTP_403_FORBIDDEN,
+    HTTP_404_NOT_FOUND,
+    HTTP_409_CONFLICT,
+    HTTP_500_INTERNAL_SERVER_ERROR,
+)
+from src.commonLib.utils.logger_config import logger
+
+
+class BaseCustomException(HTTPException):
+    def __init__(
+        self,
+        status_code: int,
+        detail: Optional[str] = None,
+        default_detail: str = "",
+        headers: Optional[dict[str, Any]] = None,
+    ) -> None:
+        message = detail or default_detail
+        logger.error(f"Exception raised: {message} (Status Code: {status_code})")
+        super().__init__(status_code=status_code, detail=message, headers=headers)
+
+
+class ServerException(BaseCustomException):
+    def __init__(self, detail: Optional[str] = None) -> None:
+        super().__init__(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail,
+            default_detail=error_strings.SERVER_ERROR,
+        )
+
+
+class IncorrectLoginException(BaseCustomException):
+    def __init__(self, detail: Optional[str] = None) -> None:
+        super().__init__(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail=detail,
+            default_detail=error_strings.INCORRECT_LOGIN_INPUT,
+        )
+
+
+class DisallowedLoginException(BaseCustomException):
+    def __init__(self, detail: Optional[str] = None) -> None:
+        super().__init__(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail=detail,
+            default_detail=error_strings.UNVERIFIED_USER_ERROR,
+        )
+
+
+class AlreadyExistsException(BaseCustomException):
+    def __init__(self, entity_name: str, detail: Optional[str] = None) -> None:
+        super().__init__(
+            status_code=HTTP_409_CONFLICT,
+            detail=detail or error_strings.ALREADY_EXISTS.format(entity_name),
+        )
+
+
+class InvalidTokenException(BaseCustomException):
+    def __init__(self, detail: Optional[str] = None) -> None:
+        super().__init__(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=detail,
+            default_detail=error_strings.MALFORMED_PAYLOAD,
+        )
+
+
+class ObjectNotFoundException(BaseCustomException):
+    def __init__(self, detail: Optional[str] = None) -> None:
+        super().__init__(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=detail,
+            default_detail=error_strings.NOT_FOUND,
+        )
+
+
+class UnauthorizedEndpointException(BaseCustomException):
+    def __init__(self, detail: Optional[str] = None) -> None:
+        super().__init__(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=detail,
+            default_detail=error_strings.UNAUTHORIZED_ACTION,
+        )
+
+
+class DoesNotExistException(BaseCustomException):
+    def __init__(self, entity_name: str, detail: Optional[str] = None) -> None:
+        super().__init__(
+            status_code=HTTP_404_NOT_FOUND,
+            detail=detail or error_strings.DOES_NOT_EXIST.format(entity_name),
+        )
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\core\services\jwt.py =====
+import jwt
+from datetime import datetime, timedelta
+from loguru import logger
+from fastapi import HTTPException, status
+from pydantic import ValidationError
+from src.core.errors.exceptions import InvalidTokenException
+from src.core.settings.configurations.config import settings
+from src.schemas.jwt_schema import JWTInvite, JWTUser
+
+class JWTService:
+    def __init__(
+        self,
+        secret_key: str = settings.SECRET_KEY,
+        algorithm: str = settings.JWT_ALGORITHM,
+        expire_minutes: int = settings.JWT_EXPIRE_MINUTES,
+    ):
+        self.secret_key = secret_key
+        self.algorithm = algorithm
+        self.expire_minutes = expire_minutes
+
+    def decode_token(self, token: str) -> dict:
+        """Decode a JWT token and validate its claims."""
+        try:
+            decoded_payload = jwt.decode(
+                token, self.secret_key, algorithms=[self.algorithm]
+            )
+            if "exp" in decoded_payload and decoded_payload["exp"] <= datetime.utcnow().timestamp():
+                raise InvalidTokenException(detail="Token has expired.")
+            return decoded_payload
+        except jwt.ExpiredSignatureError:
+            logger.error("JWT expired.")
+            raise InvalidTokenException(detail="Token has expired.")
+        except jwt.InvalidTokenError as e:
+            logger.error(f"Invalid JWT: {e}")
+            raise InvalidTokenException(detail="Invalid token.")
+        except KeyError as e:
+            logger.error(f"Missing key in JWT payload: {e}")
+            raise InvalidTokenException(detail="Malformed token payload.")
+
+    def generate_token(self, payload: dict, expires_delta: timedelta = None) -> str:
+        """Generate a JWT token with optional expiration."""
+        if expires_delta is None:
+            expires_delta = timedelta(minutes=self.expire_minutes)
+
+        now = datetime.utcnow()
+        payload.update({
+            "exp": (now + expires_delta).timestamp(),
+            "iat": now.timestamp(),
+        })
+
+        logger.debug(f"Generating JWT with payload: {payload}")
+
+        try:
+            token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+            return token
+        except Exception as e:
+            logger.error(f"Error encoding JWT: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error generating token."
+            )
+
+    def get_user_id_from_token(self, token: str) -> str:
+        """Extract user ID from a JWT token."""
+        payload = self.decode_token(token)
+        return payload.get("id", None)
+
+    def get_user_email_from_token(self, token: str) -> str:
+        """Extract email from a JWT token."""
+        payload = self.decode_token(token)
+        return payload.get("email", None)
+
+    def generate_invitation_token(self, id: str, expires_delta: timedelta = None) -> str:
+        """Generate a JWT token for invitations."""
+        jwt_content = JWTInvite(id=id).dict()
+        token = self.generate_token(jwt_content, expires_delta)
+        return token
+
+    def validate_token_structure(self, token: str) -> None:
+        """Validate the basic structure of a JWT token."""
+        if not isinstance(token, str) or len(token.split(".")) != 3:
+            raise InvalidTokenException(detail="Malformed token structure.")
+
+jwt_service = JWTService()
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\core\settings\configurations\config.py =====
+from pydantic_settings import BaseSettings
+from pydantic import Field
+import os
+
+
+
+
+class CustomSettings(BaseSettings):
+    # General Settings
+    ALLOWED_HOSTS: str = Field(..., description="Comma-separated list of allowed hosts")
+    ALLOWED_ORIGINS: str = Field(
+        ..., description="Comma-separated list of allowed CORS origins"
+    )
+    ALLOWED_METHODS: str = Field(
+        ..., description="Comma-separated list of allowed HTTP methods"
+    )
+    SECRET_KEY: str = Field(
+        ..., env="SECRET_KEY", description="Secret key for the application"
+    )
+    RESET_TOKEN_EXPIRE_MINUTES: int = Field(
+        60, description="Reset token expiration time in minutes"
+    )
+    PROJECT_NAME: str = Field(..., description="Project name")
+    API_URL_PREFIX: str = Field(..., description="API URL prefix")
+    VERSION: str = Field("0.1.0", description="API version")
+    DEBUG: bool = Field(False, description="Debug mode")
+
+    # Database Settings
+    POSTGRES_DB_URL: str = Field(
+        ..., env="POSTGRES_DB_URL", description="PostgreSQL database URL"
+    )
+    MONGO_DB_URL: str = Field(
+        ..., env="MONGO_DB_URL", description="MongoDB database URL"
+    )
+    MONGO_DB_NAME: str = Field(
+        ..., env="MONGO_DB_NAME", description="MongoDB database name"
+    )
+
+    # JWT and Security Settings
+    JWT_TOKEN_PREFIX: str = Field(..., description="Prefix for JWT tokens")
+    JWT_ALGORITHM: str = Field(..., description="Algorithm used for JWT tokens")
+    JWT_EXPIRE_MINUTES: int = Field(..., description="JWT token expiration in minutes")
+    HEADER_KEY: str = Field(..., description="Header key for authentication")
+    API_KEY_AUTH_ENABLED: bool = Field(
+        True, description="Enable or disable API key authentication"
+    )
+    INSTAGRAM_SESSION_ID:str
+
+    # Email Configuration
+
+    # User Types
+
+
+
+    # Payment Configuration
+
+
+    class Config:
+        env_file = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "env_files", ".env"
+        )
+        env_file_encoding = "utf-8"
+
+
+
+settings = CustomSettings()
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\core\settings\security.py =====
+from passlib.context import CryptContext
+from src.core.settings.configurations.config import settings
+
+# Dynamic scheme configuration from settings
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+class AppSecurity:
+    @staticmethod
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
+        """Verify a plain password against a hashed password."""
+        return pwd_context.verify(plain_password, hashed_password)
+    @staticmethod
+    def get_password_hash(password: str) -> str:
+        """Hash a password for storing."""
+        return pwd_context.hash(password)
+
+    @staticmethod
+    def is_strong_password(password: str) -> bool:
+        """Check if the password meets strength requirements."""
+        return (
+            len(password) >= 8 and
+            any(c.isdigit() for c in password) and
+            any(c.isalpha() for c in password) and
+            not password.isalnum()
+        )
+
+    @staticmethod
+    def generate_reset_token(user_id: str) -> str:
+        pass
+
+    @staticmethod
+    def verify_reset_token(token: str) -> bool:
+        pass
+
+
+security = AppSecurity()
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\database\base.py =====
+from src.commonLib.models.base_class import Base
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\database\sessions\mongo_client.py =====
+from motor.motor_asyncio import AsyncIOMotorClient
+from src.core.settings.configurations.config import settings
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential
+from pymongo.errors import PyMongoError
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# MongoDB connection parameters
+MONGO_DB_URL = settings.MONGO_DB_URL
+MONGO_DB_NAME = settings.MONGO_DB_NAME
+
+# Retry configuration for establishing the MongoDB connection
+@retry(
+    stop=stop_after_attempt(3),  # Retry up to 3 times
+    wait=wait_exponential(multiplier=1, min=2, max=10),  # Exponential backoff
+    reraise=True  # Raise the last exception if all retries fail
+)
+def create_mongo_client():
+    try:
+        client = AsyncIOMotorClient(
+            MONGO_DB_URL,
+            maxPoolSize=100,  # Maximum number of connections in the pool
+            minPoolSize=10,   # Minimum number of connections in the pool
+            serverSelectionTimeoutMS=5000,  # Timeout for server selection
+            tls=True,  # Enable TLS/SSL for secure connection
+            tlsAllowInvalidCertificates=False  # Disallow invalid certificates
+        )
+        logger.info("Successfully connected to MongoDB.")
+        return client
+    except PyMongoError as e:
+        logger.error(f"Error connecting to MongoDB: {e}")
+        raise
+
+# Initialize MongoDB Client
+client = create_mongo_client()
+db_client = client[MONGO_DB_NAME]
+
+# Collections Access
+template_collection = db_client["templates"]
+
+
+
+
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\database\sessions\session.py =====
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import SQLAlchemyError
+from tenacity import retry, stop_after_attempt, wait_exponential
+from src.commonLib.utils.logger_config import logger
+from src.core.settings.configurations.config import settings
+
+
+
+
+
+# Database URL
+DATABASE_URL = settings.POSTGRES_DB_URL
+
+
+# Retry configuration for establishing the database connection
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),  
+    reraise=True, 
+)
+def get_engine():
+    try:
+        engine = create_engine(
+            DATABASE_URL,
+            pool_size=20,
+            max_overflow=10,
+            pool_timeout=30,  
+            pool_pre_ping=True,  
+            pool_recycle=1800, 
+            connect_args={"sslmode": "require"},
+        )
+        logger.info("Successfully created PostgreSQL engine.")
+        return engine
+    except SQLAlchemyError as e:
+        logger.error(f"Error creating PostgreSQL engine: {e}")
+        raise
+
+
+# Create the SQLAlchemy engine
+engine = get_engine()
+
+# SessionLocal factory for creating new Session objects
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\limiter.py =====
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\main.py =====
+import time
+import uuid
+from fastapi import FastAPI, Request, Depends
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.exceptions import RequestValidationError
+from src.api.routers import analytics_routes
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.cors import CORSMiddleware
+from slowapi import  _rate_limit_exceeded_handler
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+from src.commonLib.utils.logger_config import logger
+from src.core.settings.configurations.config import settings
+from src.api.routers.routes import router as global_router
+from src.database.base import Base
+from src.database.sessions.session import engine
+from src.limiter import limiter
+from src.database.sessions.mongo_client import client
+
+
+
+
+# Initialize database schema (For relational databases)
+Base.metadata.create_all(bind=engine)
+
+def create_application() -> FastAPI:
+    """Initialize FastAPI app with configurations."""
+    app = FastAPI(
+        title=settings.PROJECT_NAME,
+        description="StreamSaver API for downloading videos & images from various platforms.",
+        version=settings.VERSION,
+    )
+
+    # Apply CORS Middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=settings.ALLOWED_METHODS.split(","),
+        allow_headers=["*"],
+    )
+
+    # Apply Rate-Limiting Middleware
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
+
+
+    register_exception_handlers(app)
+
+
+    register_event_handlers(app)
+
+
+    app.include_router(global_router, prefix=settings.API_URL_PREFIX)
+
+    return app
+
+async def request_logging_middleware(request: Request, call_next):
+    """Middleware to log all incoming API requests and response times."""
+    start_time = time.time()
+    trace_id = str(uuid.uuid4())  
+
+
+    logger.info(f" [TRACE {trace_id}] {request.method} {request.url}")
+
+    # Process request
+    response = await call_next(request)
+
+   
+    duration = time.time() - start_time
+
+  
+    logger.info(f"📤 [TRACE {trace_id}] {request.method} {request.url} | Status: {response.status_code} | Time: {duration:.3f}s")
+
+    return response
+
+def register_exception_handlers(app: FastAPI):
+    """Handles exceptions globally with detailed logging."""
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        trace_id = str(uuid.uuid4())
+        logger.warning(f" [TRACE {trace_id}] HTTP {exc.status_code}: {exc.detail} | {request.method} {request.url}")
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"trace_id": trace_id, "detail": exc.detail},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        trace_id = str(uuid.uuid4())
+        logger.warning(f" [TRACE {trace_id}] Validation Error: {exc.errors()} | {request.method} {request.url}")
+
+        return JSONResponse(
+            status_code=422,
+            content={"trace_id": trace_id, "detail": exc.errors()},
+        )
+
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        trace_id = str(uuid.uuid4())
+        logger.error(f" [TRACE {trace_id}] Unhandled Error: {str(exc)} | {request.method} {request.url}")
+
+        return JSONResponse(
+            status_code=500,
+            content={"trace_id": trace_id, "detail": "An unexpected error occurred."},
+        )
+
+def register_event_handlers(app: FastAPI):
+    """Handles startup and shutdown events for database connections."""
+    @app.on_event("startup")
+    async def startup_db_client():
+        """ MongoDB Connection on Startup"""
+        try:
+            app.mongodb_client = client
+            app.mongodb = app.mongodb_client.get_database(settings.MONGO_DB_NAME)
+            logger.info("  MongoDB connection established successfully")
+        except Exception as e:
+            logger.error(f"  Failed to connect to MongoDB: {str(e)}")
+
+    @app.on_event("shutdown")
+    async def shutdown_db_client():
+        """ MongoDB Connection on Shutdown"""
+        logger.info(" 📴 Shutting down MongoDB client...")
+        app.mongodb_client.close()
+        logger.info(" MongoDB client shutdown complete")
+
+    @app.middleware("http")
+    async def performance_monitoring_middleware(request: Request, call_next):
+        """Middleware to log API response times."""
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+
+        logger.info(f" ⏱️ {request.method} {request.url} - Processed in {process_time:.3f}s")
+        return response
+
+app = create_application()
+
+# Add Rate-Limit Exception Handler
+app.add_exception_handler(429, _rate_limit_exceeded_handler)
+
+
+
+@app.get("/")
+async def root():
+    """Redirect to API documentation."""
+    return RedirectResponse(url="/docs")
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\models\user_model.py =====
+import jwt
+from datetime import datetime, timedelta
+from uuid import uuid4
+from src.commonLib.utils.logger_config import logger
+from sqlalchemy import Integer, Column, Boolean, String, ForeignKey
+from sqlalchemy.orm import relationship, Session
+from commonLib.models.base_class import Base
+from src.core.settings import security
+from src.schemas.jwt_schema import JWTEMAIL, JWTUser
+from src.core.settings.configurations.config import settings
+
+
+
+JWT_EXPIRE_MINUTES = settings.JWT_EXPIRE_MINUTES
+JWT_ALGORITHM = settings.JWT_ALGORITHM
+RESET_TOKEN_EXPIRE_MINUTES = settings.RESET_TOKEN_EXPIRE_MINUTES
+SECRET_KEY = settings.SECRET_KEY
+SUPERUSER_USER_TYPE = settings.SUPERUSER_USER_TYPE
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True, index=True)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=False)
+    hashed_password = Column(String, nullable=False)
+    @property
+    def set_password(self, password: str) -> None:
+        self.hashed_password = security.get_password_hash(password)
+
+    def verify_password(self, password: str) -> bool:
+        return security.verify_password(password, self.hashed_password)
+
+    def generate_jwt(self, expires_delta: timedelta = None):
+        if not self.is_active:
+            raise Exception("user is not active")
+
+        jwt_content = JWTUser(id=self.id).dict()
+        if expires_delta is None:
+            expires_delta = timedelta(minutes=JWT_EXPIRE_MINUTES)
+
+        now = datetime.now()
+        expires_at = now + expires_delta
+
+        jwt_content["exp"] = expires_at.timestamp()
+        jwt_content["iat"] = now.timestamp()
+
+        encoded_token = jwt.encode(
+            payload=jwt_content, key=str(SECRET_KEY), algorithm=JWT_ALGORITHM
+        )
+        return encoded_token
+
+    def generate_verification_token(
+        self, expires_delta: timedelta = None, **kwargs
+    ) -> str:
+        """Generate JSON Web Token for a user"""
+
+        if expires_delta is None:
+            expires_delta = timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+        now = datetime.now()
+        expires_at = now + expires_delta
+        jwt_content = JWTEMAIL(email=self.email).dict()
+        jwt_content.update(kwargs)
+        jwt_content.update({"exp": expires_at.timestamp(), "iat": now.timestamp()})
+        logger.info(jwt_content)
+        encoded_token = jwt.encode(
+            payload=jwt_content, key=str(SECRET_KEY), algorithm=JWT_ALGORITHM
+        )
+        return encoded_token
+
+    def generate_password_reset_token(
+        self, db: Session, expires_delta: timedelta = None
+    ) -> PasswordResetToken:
+        token = security.generate_reset_token(self.email)
+        if expires_delta is None:
+            expires_delta = timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
+
+        reset_token = reset_token_repo.create(
+            db,
+            obj_in=ResetTokenCreate(
+                user_id=self.id, token=token, expires_at=datetime.now() + expires_delta
+            ),
+        )
+
+        return reset_token
+
+    def __init__(self, first_name: str, last_name: str, email: str):
+            self.first_name = first_name
+            self.last_name = last_name
+            self.email = email
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\models\user_type_model.py =====
+# import jwt
+from datetime import datetime, timedelta
+from uuid import uuid4
+from sqlalchemy import Column, String
+from sqlalchemy.orm import relationship
+from commonLib.models.base_class import Base
+from src.core.settings.configurations.config import settings
+from uuid import uuid4
+
+class UserType(Base):
+    __tablename__ = "user_types"
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    name = Column(String, unique=True, nullable=False)
+    users = relationship("User", back_populates="user_type")
+    invite_user_type = relationship("UserInvite", back_populates="user_type")
+
+    def __init__(self, name: str):
+        self.name = name
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\models\visits_model.py =====
+from datetime import datetime
+from pydantic import BaseModel, Field, HttpUrl
+from pymongo import MongoClient
+from typing import Optional
+from src.commonLib.models.mongo_base_class import BaseModel
+
+from src.core.settings.configurations.config import settings
+# MongoDB setup
+client = MongoClient(settings.MONGO_DB_URL)  
+db = client.streamsaver_db
+visits_collection = db.visitor_logs
+
+
+
+
+class VisitorLog(BaseModel):
+    ip: str = Field(..., description="Visitor's IP Address")
+    user_agent: Optional[str] = Field(None, description="User's browser and device details")
+    referrer: Optional[HttpUrl] = Field(None, description="URL of the referring page")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Visit timestamp")
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\repositories\user_repo.py =====
+from uuid import uuid4
+from datetime import timedelta
+from typing import Any, Dict, List, Optional, Union
+from sqlalchemy.orm import Session
+from src.core.settings import security
+
+from commonLib.repositories.relational_repository import Base
+from src.models.user_model import User
+from src.schemas.user_schema import UserCreate
+
+
+class UserRepositories(Base[User]):
+    def get_by_email(self, db: Session, *, email):
+        return db.query(User).filter(User.email == email).first()
+
+    def create(self, db, *, obj_in: UserCreate):
+        db_obj = User(
+            id=uuid4().hex,
+            first_name=obj_in.first_name,
+            last_name=obj_in.last_name,
+            email=obj_in.email,
+            # user_type_id=obj_in.user_type_id,  ##Uncomment this when the user type is implemented
+            # is_active=True
+        )
+        db_obj.set_password(obj_in.password)
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def create_verification_token(self, db: Session, *, email):
+        user = db.query(User).filter(User.email == email).first()
+        return user.generate_verification_token()
+
+    def create_reset_password_token(self, db: Session, *, email):
+        user = db.query(User).filter(User.email == email).first()
+        return user.generate_verification_token()
+
+    def activate(self, db: Session, *, db_obj: User) -> User:
+        return self._set_activation_status(db=db, db_obj=db_obj, status=True)
+
+    def deactivate(self, db: Session, *, db_obj: User) -> User:
+        return self._set_activation_status(db=db, db_obj=db_obj, status=False)
+
+    def _set_activation_status(
+        self, db: Session, *, db_obj: User, status: bool
+    ) -> User:
+        if db_obj.is_active == status:
+            return db_obj
+        return super().update(db, db_obj=db_obj, obj_in={"is_active": status})
+
+    def get_users_by_user_type(self, db: Session, *, user_type_id: str) -> List[User]:
+        return db.query(User).filter(User.user_type_id == user_type_id).all()
+
+    def update_password(self, db: Session, db_obj: User, password: str) -> User:
+        user = user_repo.update(
+            db=db,
+            db_obj=db_obj,
+            obj_in={"hashed_password": security.get_password_hash(password)},
+        )
+        return user
+
+
+user_repo = UserRepositories(User)
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\repositories\user_type_repo.py =====
+from src.models.user_type_model import UserType
+from sqlalchemy.orm import Session
+from commonLib.repositories.relational_repository import Base
+
+
+class UserTypeRepositories(Base[UserType]):
+    def get_by_name(self, db: Session, *, name:str) -> UserType:
+        return db.query(UserType).filter(UserType.name == name).first()
+    
+
+
+user_type_repo = UserTypeRepositories(UserType)
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\schemas\instagram_schema.py =====
+from pydantic import BaseModel, HttpUrl
+from typing import List, Optional
+from datetime import datetime
+
+class InstagramUser(BaseModel):
+    """Represents an Instagram user."""
+    id: str
+    username: str
+    full_name: Optional[str] = None
+    profile_pic_url: Optional[HttpUrl] = None
+    is_verified: Optional[bool] = False
+
+class InstagramMedia(BaseModel):
+    """Represents an Instagram media item (image or video)."""
+    type: str  # "image" or "video"
+    url: HttpUrl
+    width: Optional[int] = None
+    height: Optional[int] = None
+    duration: Optional[float] = None  # Only for videos
+    thumbnail_url: Optional[HttpUrl] = None
+    has_audio: Optional[bool] = None  # Only for videos
+    accessibility_caption: Optional[str] = None
+
+class InstagramLocation(BaseModel):
+    """Represents the location tag on an Instagram post."""
+    id: Optional[str] = None
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+class InstagramPost(BaseModel):
+    """Represents a full Instagram post response."""
+    id: str
+    shortcode: str
+    caption: Optional[str] = None
+    timestamp: datetime
+    like_count: Optional[int] = None
+    view_count: Optional[int] = None  # Only for videos
+    comment_count: Optional[int] = None
+    media_count: Optional[int] = None  # Only for carousel posts
+    media: List[InstagramMedia]
+    owner: InstagramUser
+    location: Optional[InstagramLocation] = None
+    tags: List[str] = []
+    mentions: List[str] = []
+    is_video: bool
+    is_sponsored: Optional[bool] = False
+    product_type: Optional[str] = None  # "feed", "reel", "story"
+    music: Optional[str] = None  # Only for Reels
+
+class InstagramMediaItem(BaseModel):
+    """Represents an item in an Instagram carousel post."""
+    index: int
+    url: HttpUrl
+    type: str  # "image" or "video"
+    duration: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+class InstagramPostResponse(BaseModel):
+    """Represents the API response for an Instagram post."""
+    id: str
+    shortcode: str
+    type: str  # "reel", "single_image", "single_video", "carousel"
+    caption: Optional[str] = None
+    timestamp: datetime
+    like_count: Optional[int] = None
+    view_count: Optional[int] = None  # Only for videos/reels
+    media: List[InstagramMediaItem]
+    owner_username: str
+    owner_profile_pic: Optional[HttpUrl] = None
+    music: Optional[str] = None  # Only for Reels
+    is_sponsored: bool = False
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\schemas\jwt_schema.py =====
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr
+
+
+class JWTUser(BaseModel):
+    id: str
+
+class JWTEMAIL(BaseModel):
+    email:EmailStr
+
+
+class JWTInvite(JWTUser):
+    pass
+
+class JWTMeta(BaseModel):
+    exp: datetime
+    sub: str
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\schemas\user_schema.py =====
+from typing import List, Optional
+from datetime import datetime
+from pydantic import BaseModel, EmailStr, validator
+from src.schemas.user_type_schema import UserTypeInDB
+
+
+class UserBase(BaseModel):
+    first_name: str
+    last_name: str
+
+
+class UserCreateForm(UserBase):
+    email: EmailStr
+    password: str
+
+
+class UserCreate(UserCreateForm):
+    user_type_id: str
+
+
+class UserUpdate(UserBase):
+    email: Optional[EmailStr]
+    first_name: Optional[str]
+    last_name: Optional[str]
+    address: Optional[str]
+    phone: Optional[str]
+    password: Optional[str] = None
+
+
+class UserInLogin(BaseModel):
+    email: EmailStr
+    password: str
+    device_id: Optional[str] = None,
+
+
+class UserWithToken(UserBase):
+    email: EmailStr
+    # user_type: UserTypeInDB       ##UnComment this when the user type is implemented
+    token: str
+
+
+class UserInResponse(UserBase):
+    id: str
+    is_active: bool
+    email: EmailStr
+    # user_type: UserTypeInDB       ##UnComment this when the user type is implemented
+    verify_token: Optional[str] =None
+
+
+class AllUsers(UserInResponse):
+
+    date_created: datetime
+
+
+class UserVerify(BaseModel):
+    token: str
+
+
+class ResetPasswordSchema(BaseModel):
+    token: str
+    password: str
+
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\schemas\user_type_schema.py =====
+from pydantic import BaseModel
+
+
+
+
+class UserTypeBase(BaseModel):
+    name: str
+
+
+class UserTypeCreate(UserTypeBase):
+    pass
+
+
+class UserTypeUpdate(UserTypeBase):
+    pass
+
+
+class UserTypeInDB(UserTypeBase):
+    id: str
+
+
+
+
+
+# ===== File: C:\Users\ALEX\Desktop\work\GrayStone\streamSaver\backend\src\schemas\youtube_schema.py =====
+from pydantic import BaseModel, HttpUrl
+from typing import List, Optional
+
+class VideoThumbnail(BaseModel):
+    """Represents a YouTube video thumbnail."""
+    url: HttpUrl
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+class VideoFormat(BaseModel):
+    """Represents an available format for a YouTube video."""
+    format_id: str
+    url: HttpUrl
+    ext: Optional[str] = "mp4"  
+    resolution: Optional[str] = None
+    filesize: Optional[int] = None  # File size in bytes
+    fps: Optional[float] = None  # Frame rate
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+class   YoutubeVideoMetadata(BaseModel):
+    """Represents metadata for a YouTube video."""
+    id: str
+    title: str
+    description: Optional[str] = None
+    upload_date: str
+    duration: int  # Duration in seconds
+    view_count: int
+    like_count: Optional[int] = None
+    thumbnail: Optional[HttpUrl] = None
+    thumbnails: List[VideoThumbnail] = []
+    formats: List[VideoFormat] = []
+
+class YoutubeDownloadForm(BaseModel):
+    """Schema for requesting a YouTube video download."""
+    url: HttpUrl
+    quality: str  # Example: "1080p", "720p", etc.
+

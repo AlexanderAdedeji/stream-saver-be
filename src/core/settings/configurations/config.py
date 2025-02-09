@@ -44,6 +44,7 @@ class CustomSettings(BaseSettings):
     API_KEY_AUTH_ENABLED: bool = Field(
         True, description="Enable or disable API key authentication"
     )
+    INSTAGRAM_SESSION_ID:str
 
     # Email Configuration
 

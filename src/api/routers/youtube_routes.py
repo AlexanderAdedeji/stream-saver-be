@@ -251,7 +251,10 @@ DOWNLOADS_FOLDER = "./downloads"
 os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-COOKIES_PATH = os.path.join(ROOT_DIR, "cookies.txt")
+COOKIES_PATH = os.path.join(ROOT_DIR, "youtube.com_.txt")
+
+
+
 
 def check_ffmpeg():
     """Check if FFmpeg is installed and accessible."""
@@ -320,6 +323,7 @@ def format_video_metadata(raw_info: dict) -> YoutubeVideoMetadata:
 @router.get("/video/metadata")
 async def youtube_metadata(url: str) -> YoutubeVideoMetadata:
     """Fetch and return YouTube video metadata."""
+   
     raw_info = get_video_info(url)
     return format_video_metadata(raw_info)
 

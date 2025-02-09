@@ -14,7 +14,40 @@ from src.schemas.instagram_schema import InstagramPostResponse
 app = FastAPI()
 router = APIRouter()
 
-# Helper Functions
+import instaloader
+import os
+from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Path to the session file
+SESSION_FILE = "instagram_session"
+
+# Set up proxy (change this to your proxy details)
+PROXY = "http://your-proxy-ip:port"
+
+def login_instaloader() -> instaloader.Instaloader:
+    """Initialize Instaloader with session cookies and proxy."""
+    L = instaloader.Instaloader()
+
+    # Set proxy if available
+    if PROXY:
+        L.context.proxy = PROXY
+
+    # Load saved session if available
+    if os.path.exists(SESSION_FILE):
+        try:
+            L.load_session_from_file("your_instagram_username", SESSION_FILE)
+            logger.info("Loaded Instagram session successfully.")
+        except Exception as e:
+            logger.error(f"Error loading session: {e}")
+            raise
+    else:
+        logger.error("No saved session found. Please log in first.")
+        raise FileNotFoundError("Instagram session not found. Run login first.")
+
+    return L
 
 
 def get_owner_details(post: instaloader.Post) -> dict:
@@ -104,44 +137,7 @@ def process_media(post: instaloader.Post) -> List[dict]:
     logger.info(f"Processed media: {json.dumps(media, indent=2)}")  # Log output for debugging
     return media
 
-# def process_media(post: instaloader.Post) -> List[dict]:
-#     """Process media for all post types"""
-#     if post._node.get("edge_sidecar_to_children"):  # Carousel posts
 
-#         media = []
-#         for child in post._node.get("edge_sidecar_to_children").get("edges"):
-#             media_type = "video"  if child.get("node").get("is_video") else "image"
-#             index= child.get("node").get("id")
-#             media_url = child.get("node").get("video_url") if child.get("node").get("is_video") else child.get("node").get("display_resources")[-1].get("src")
-    
-
-#             media.append({"url": media_url, "index": index, "type":media_type})
-#         return media
-
-#         return post._node["edge_sidecar_to_children"]["edges"]
-#     else:  # Single image or video post
-#         media = [{"index": 1, 
-         
-#          "url":  post._node.get("video_url")
-#                     if post._node.get("is_video")
-#                     else post._node.get("display_url")
-         
-#                 }]
-#         return media
-#         return post._node
-#         return [
-#             {
-#                 "index": 0,
-#                 "url": (
-#                     post._node.get("video_url")
-#                     if post._node.get("is_video")
-#                     else post._post._node.get("display_url")
-#                 ),
-#                 "type": post._node.get("type"),
-#                 "width": post._node.get("dimensions", {}).get("width"),
-#                 "height": post._node.get("dimensions", {}).get("height"),
-#             }
-#         ]
 
 
 def get_music_info(post: instaloader.Post) -> Optional[str]:
