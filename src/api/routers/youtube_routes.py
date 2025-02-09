@@ -275,7 +275,7 @@ def get_video_info(url: str) -> dict:
         ydl_opts = {
     "quiet": True,
     "no_warnings": True,
-    "cookies":"LOGIN_INFO	AFmmF2swRQIhAKYYwEUxKgVXJTVUGyu5pg-yAnXZWVWXkxuv06hCJFmXAiBDMA3LyN6QnciawDax0SCSYnJf2SCt7MR3vm5ykrvioA:QUQ3MjNmeW15dDRjTlQ3WXR5YXZRcmtvV3dfMXg5N0pxcjhfamR6MncyNE05c0Y3al9tdzlabmlvRjFHcm9CYXB2NWxwS19LQ2Q1VGpTNTZjVHctOWV4TkgzUjJuWTVxMVlpTTgybnVUanEzbjVmeDFmQTV1NnJBOVlJbVVPVkNObzRyQm0xRDFkQVdOalNUNjdFWlFpOWk4U2FTTHRfZ3BB",
+    "cookiefile": COOKIES_PATH,
     "headers": {
         "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36"
     }
